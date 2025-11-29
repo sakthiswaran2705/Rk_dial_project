@@ -2,7 +2,6 @@ from fastapi import APIRouter, Query
 from bson import ObjectId
 from common_urldb import db
 router = APIRouter()
-app = FastAPI()
 
 col_shop = db["shop"]
 col_city = db["city"]
