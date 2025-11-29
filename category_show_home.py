@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from bson import ObjectId
 from common_urldb import db
 router = APIRouter()
+app = FastAPI()
 
 col_category = db["category"]
 col_shop = db["shop"]
