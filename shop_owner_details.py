@@ -4,7 +4,6 @@ from datetime import datetime
 import hashlib, base64
 from common_urldb import db
 router = APIRouter()
-app = FastAPI()
 
 col_user = db["user"]
 col_shop = db["shop"]
