@@ -51,21 +51,21 @@ def login(email: str = Form(...), password: str = Form(...)):
         }
     }
 #SEARCH CATEGORY
-@router.get("/search_category")
+@router.get("/search/category")
 def search_category(query: str = Query("")):
     data = list(col_category.find({"name": {"$regex": query, "$options": "i"}}))
     return {"status": "success", "data": [{**item, "_id": oid(item["_id"])} for item in data]}
 
 
 #SEARCH CITY
-@router.get("/search_city")
+@router.get("/search/city")
 def search_city(query: str = Query("")):
     data = list(col_city.find({"city_name": {"$regex": query, "$options": "i"}}).limit(20))
     return {"status": "success", "data": [{**item, "_id": oid(item["_id"])} for item in data]}
 
 
 #ADD SHOP
-@router.post("/add_shop/")
+@router.post("/add/shop/")
 def add_shop(
     user_id: str = Form(...),
     shop_name: str = Form(...),
@@ -125,7 +125,7 @@ def add_shop(
 
 
 #UPDATE SHOP
-@router.post("/update_shop/")
+@router.post("/update/shop/")
 def update_shop(
     shop_id: str = Form(...),
     shop_name: str = Form(None),
@@ -185,7 +185,7 @@ def update_shop(
 
 
 # DELETE SHOP
-@router.post("/delete_shop/")
+@router.post("/delete/shop/")
 def delete_shop(shop_id: str = Form(...)):
     try:
         soid = ObjectId(shop_id)
@@ -197,7 +197,7 @@ def delete_shop(shop_id: str = Form(...)):
 
 
 #DELETE SHOP PHOTO
-@router.post("/delete_photo/")
+@router.post("/delete/photo/{shop_id}")
 def delete_photo(shop_id: str = Form(...), photo_index: int = Form(...)):
     try:
         soid = ObjectId(shop_id)
@@ -272,7 +272,7 @@ def get_user_shops(user_id: str):
     return {"status": "success", "data": final}
 
 
-@router.post("/add_offer/")
+@router.post("/add/offer/{user_id}")
 def add_offer(user_id: str = Form(...), target_shop: str = Form(...), file: UploadFile = File(...)):
     try:
         u_oid = ObjectId(user_id)
@@ -325,7 +325,7 @@ def add_offer(user_id: str = Form(...), target_shop: str = Form(...), file: Uplo
     return {"status": "success", "message": "Offer added successfully"}
 
 
-@router.post("/delete_offer/")
+@router.post("/delete/offer/{offer_id}")
 def delete_offer(offer_id: str = Form(...)):
     try:
         oidv = ObjectId(offer_id)
