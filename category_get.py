@@ -17,7 +17,7 @@ def safe(x):
         return {k: safe(v) for k, v in x.items()}
     return x
 
-@router.get("/category/static/")
+@router.get("/place/category/")
 def get_static(
     place: str | None = Query(None),
     name: str | None = Query(None)
