@@ -3,6 +3,7 @@ from bson import ObjectId
 from datetime import datetime
 import hashlib, base64
 from common_urldb import db
+
 router = APIRouter()
 
 col_user = db["user"]
@@ -37,12 +38,12 @@ def register(email: str = Form(...), password: str = Form(...)):
 def login(email: str = Form(...), password: str = Form(...)):
     user = col_user.find_one({"email": email})
 
-    # Check login
     if not user or hash_password(password) != user["password"]:
         return {"status": "error", "message": "Invalid email or password"}
-    # Get shops
+
     result = get_user_shops(str(user["_id"]))
     shops = result.get("data", [])
+
     return {
         "status": "success",
         "data": {
@@ -50,6 +51,8 @@ def login(email: str = Form(...), password: str = Form(...)):
             "shops": shops
         }
     }
+
+
 #SEARCH CATEGORY
 @router.get("/search/category")
 def search_category(query: str = Query("")):
@@ -87,12 +90,10 @@ def add_shop(
     except:
         return {"status": "error", "message": "Invalid user id"}
 
-    # City
     city_data = {"city_name": city_name, "district": district, "pincode": pincode, "state": state}
     existing_city = col_city.find_one(city_data)
     city_id = existing_city["_id"] if existing_city else col_city.insert_one(city_data).inserted_id
 
-    # Categories
     cat_ids = []
     for name in category_list.split(","):
         name = name.strip()
@@ -101,7 +102,6 @@ def add_shop(
             return {"status": "error", "message": f"Category '{name}' not found"}
         cat_ids.append(str(cat["_id"]))
 
-    # Photos
     photos_b64 = []
     if photos:
         for f in photos:
@@ -124,10 +124,11 @@ def add_shop(
     return {"status": "success", "message": "Shop added"}
 
 
-#UPDATE SHOP
+#UPDATE SHOP  (OWNER ONLY)
 @router.post("/update/shop/")
 def update_shop(
     shop_id: str = Form(...),
+    user_id: str = Form(...),   
     shop_name: str = Form(None),
     description: str = Form(None),
     address: str = Form(None),
@@ -144,8 +145,16 @@ def update_shop(
 ):
     try:
         soid = ObjectId(shop_id)
+        user_oid = ObjectId(user_id)
     except:
-        return {"status": "error", "message": "Invalid shop id"}
+        return {"status": "error", "message": "Invalid id format"}
+
+    shop = col_shop.find_one({"_id": soid})
+    if not shop:
+        return {"status": "error", "message": "Shop not found"}
+
+    if shop["user_id"] != user_oid:
+        return {"status": "error", "message": "Unauthorized: Not your shop"}
 
     update = {}
 
@@ -184,29 +193,41 @@ def update_shop(
     return {"status": "success", "message": "Shop updated"}
 
 
-# DELETE SHOP
-@router.post("/delete/shop/")
-def delete_shop(shop_id: str = Form(...)):
+# DELETE SHOP  (OWNER ONLY)
+@router.post("/delete/shop/{shop_id}")
+def delete_shop(shop_id: str = Form(...), user_id: str = Form(...)):
     try:
         soid = ObjectId(shop_id)
+        user_oid = ObjectId(user_id)
     except:
-        return {"status": "error", "message": "Invalid shop id"}
-
-    res = col_shop.delete_one({"_id": soid})
-    return {"status": "success", "message": "Shop deleted"} if res.deleted_count else {"status": "error", "message": "Shop not found"}
-
-
-#DELETE SHOP PHOTO
-@router.post("/delete/photo/{shop_id}")
-def delete_photo(shop_id: str = Form(...), photo_index: int = Form(...)):
-    try:
-        soid = ObjectId(shop_id)
-    except:
-        return {"status": "error", "message": "Invalid shop id"}
+        return {"status": "error", "message": "Invalid id format"}
 
     shop = col_shop.find_one({"_id": soid})
     if not shop:
         return {"status": "error", "message": "Shop not found"}
+
+    if shop["user_id"] != user_oid:
+        return {"status": "error", "message": "Unauthorized: Not your shop"}
+
+    col_shop.delete_one({"_id": soid})
+    return {"status": "success", "message": "Shop deleted"}
+
+
+#DELETE SHOP PHOTO  (OWNER ONLY)
+@router.post("/delete/photo/")
+def delete_photo(shop_id: str = Form(...), photo_index: int = Form(...), user_id: str = Form(...)):
+    try:
+        soid = ObjectId(shop_id)
+        user_oid = ObjectId(user_id)
+    except:
+        return {"status": "error", "message": "Invalid id format"}
+
+    shop = col_shop.find_one({"_id": soid})
+    if not shop:
+        return {"status": "error", "message": "Shop not found"}
+
+    if shop["user_id"] != user_oid:
+        return {"status": "error", "message": "Unauthorized: Not your shop"}
 
     photos = shop.get("photos", [])
     if not (0 <= photo_index < len(photos)):
@@ -214,6 +235,7 @@ def delete_photo(shop_id: str = Form(...), photo_index: int = Form(...)):
 
     photos.pop(photo_index)
     col_shop.update_one({"_id": soid}, {"$set": {"photos": photos}})
+
     return {"status": "success", "message": "Photo deleted"}
 
 
@@ -231,7 +253,6 @@ def get_user_shops(user_id: str):
     for s in shops:
         s_clean = {k: oid(v) for k, v in s.items()}
 
-        # Categories
         categories = []
         for cid in s.get("category", []):
             try:
@@ -241,14 +262,12 @@ def get_user_shops(user_id: str):
             except:
                 pass
 
-        # City
         city_doc = None
         if s.get("city_id"):
             c = col_city.find_one({"_id": ObjectId(s["city_id"])})
             if c:
                 city_doc = {k: oid(v) for k, v in c.items()}
 
-        # Offers
         offer_docs = list(col_offers.find({"shop_ids": s_clean["_id"]}).sort("uploaded_at", -1))
         offers_b64, offers_types, offer_ids = [], [], []
 
@@ -258,7 +277,7 @@ def get_user_shops(user_id: str):
             if fb64:
                 offers_b64.append(fb64)
                 offers_types.append(ftype)
-                offer_ids.append(oid(od["_id"]))   # <-- important for delete
+                offer_ids.append(oid(od["_id"]))
 
         final.append({
             "shop": s_clean,
@@ -272,6 +291,7 @@ def get_user_shops(user_id: str):
     return {"status": "success", "data": final}
 
 
+#ADD OFFER
 @router.post("/add/offer/{user_id}")
 def add_offer(user_id: str = Form(...), target_shop: str = Form(...), file: UploadFile = File(...)):
     try:
@@ -281,7 +301,6 @@ def add_offer(user_id: str = Form(...), target_shop: str = Form(...), file: Uplo
 
     shop_ids, city_ids = [], []
 
-    # All shops
     if target_shop == "ALL":
         shops = list(col_shop.find({"user_id": u_oid}))
         if not shops:
@@ -290,7 +309,6 @@ def add_offer(user_id: str = Form(...), target_shop: str = Form(...), file: Uplo
             shop_ids.append(str(s["_id"]))
             city_ids.append(s.get("city_id"))
 
-    # Single shop
     else:
         try:
             soid = ObjectId(target_shop)
@@ -301,16 +319,21 @@ def add_offer(user_id: str = Form(...), target_shop: str = Form(...), file: Uplo
         if not shop:
             return {"status": "error", "message": "Shop not found"}
 
+        if shop["user_id"] != u_oid:
+            return {"status": "error", "message": "Unauthorized: Not your shop"}
+
         shop_ids.append(str(shop["_id"]))
         city_ids.append(shop.get("city_id"))
 
-    # File processing
     fbytes = file.file.read()
     fb64 = base64.b64encode(fbytes).decode()
 
-    if file.content_type.startswith("video/"): ftype = "video"
-    elif file.content_type.startswith("image/"): ftype = "image"
-    else: return {"status": "error", "message": "Only image/video allowed"}
+    if file.content_type.startswith("video/"):
+        ftype = "video"
+    elif file.content_type.startswith("image/"):
+        ftype = "image"
+    else:
+        return {"status": "error", "message": "Only image/video allowed"}
 
     col_offers.insert_one({
         "user_id": user_id,
@@ -324,13 +347,21 @@ def add_offer(user_id: str = Form(...), target_shop: str = Form(...), file: Uplo
 
     return {"status": "success", "message": "Offer added successfully"}
 
-
-@router.post("/delete/offer/{offer_id}")
-def delete_offer(offer_id: str = Form(...)):
+# DELETE OFFER (OWNER ONLY)
+@router.post("/delete/offer/offer_id")
+def delete_offer(offer_id: str = Form(...), user_id: str = Form(...)):
     try:
         oidv = ObjectId(offer_id)
+        user_oid = ObjectId(user_id)
     except:
-        return {"status": "error", "message": "Invalid offer id"}
+        return {"status": "error", "message": "Invalid id format"}
 
-    res = col_offers.delete_one({"_id": oidv})
-    return {"status": "success", "message": "Offer deleted"} if res.deleted_count else {"status": "error", "message": "Offer not found"}
+    offer = col_offers.find_one({"_id": oidv})
+    if not offer:
+        return {"status": "error", "message": "Offer not found"}
+
+    if offer["user_id"] != str(user_oid):
+        return {"status": "error", "message": "Unauthorized: Not your offer"}
+
+    col_offers.delete_one({"_id": oidv})
+    return {"status": "success", "message": "Offer deleted"}
