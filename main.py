@@ -6,7 +6,13 @@ from category_get import router as category_router
 from shop_owner_details import router as owner_router
 from category_show_home import router as category_home_router
 
-app = FastAPI()
+app = FastAPI(
+    title="RK-DIAL API",
+    description="API endpoints for RK-Dial Application",
+    version="1.0.0",
+    docs_url="/api",        
+    redoc_url=None          
+)
 
 # CORS
 app.add_middleware(
