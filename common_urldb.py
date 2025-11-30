@@ -1,4 +1,4 @@
 from pymongo import MongoClient
 
-client = MongoClient("mongodb+srv://rkdr:kad$ai!Tn@cluster0.XXXX.mongodb.net/?retryWrites=true&w=majority")
+client = MongoClient("mongodb+srv://rkdr:<kad$ai!Tn>@rkd.8gcpbt5.mongodb.net/?appName=rkd")
 db = client["office"]
