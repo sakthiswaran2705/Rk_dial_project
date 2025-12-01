@@ -2,7 +2,7 @@ from fastapi import APIRouter, Form, UploadFile, File, Query
 from bson import ObjectId
 from datetime import datetime
 import hashlib, base64
-from common_urldb import db
+from api.common_urldb import db
 
 router = APIRouter()
 
