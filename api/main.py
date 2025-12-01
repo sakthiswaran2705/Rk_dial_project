@@ -10,7 +10,7 @@ app = FastAPI(
     title="RK-DIAL API",
     description="API endpoints for RK-Dial Application",
     version="1.0.0",
-    docs_url="/api",        
+    docs_url="/api/",        
     redoc_url=None          
 )
 
