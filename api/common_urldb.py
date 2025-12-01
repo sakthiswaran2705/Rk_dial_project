@@ -1,7 +1,6 @@
-import os
 from pymongo import MongoClient
 
-MONGO_URI = os.getenv("MONGO_URI")
-
-client = MongoClient(MONGO_URI)
+client = MongoClient(
+    "mongodb+srv://rkdr:<kad$ai!Tn>@rkd.8gcpbt5.mongodb.net/office?retryWrites=true&w=majority&appName=rkd"
+)
 db = client["office"]
