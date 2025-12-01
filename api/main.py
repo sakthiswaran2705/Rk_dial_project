@@ -2,9 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import Routers
-from category_get import router as category_router
-from shop_owner_details import router as owner_router
-from category_show_home import router as category_home_router
+from api.category_get import router as category_router
+from api.shop_owner_details import router as owner_router
+from api.category_show_home import router as category_home_router
 
 app = FastAPI(
     title="RK-DIAL API",
