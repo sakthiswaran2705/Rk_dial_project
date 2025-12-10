@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from bson import ObjectId
-from common_urldb import db
+from api.common_db_url import db
 from datetime import datetime
 router = APIRouter()
 col_category = db["category"]
