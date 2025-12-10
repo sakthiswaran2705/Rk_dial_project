@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 from bson import ObjectId
-from api.common_urldb import db
+from common_urldb import db
+from datetime import datetime
 router = APIRouter()
-
 col_category = db["category"]
 col_shop = db["shop"]
 col_reviews = db["reviews"]
@@ -14,7 +14,10 @@ def serialize(doc):
     return doc
 
 # CATEGORY API
-@router.get("/category/get")
+@router.get(
+    "/category/list/",
+    operation_id="getCategoryList"
+)
 def get_categories():
     try:
         data = list(col_category.find())
@@ -22,21 +25,15 @@ def get_categories():
         return {"status": True, "data": data}
     except Exception as e:
         return {"status": False, "error": str(e)}
-# GET ALL SHOPS   REQUIRED FOR TOP RATING
-@router.get("/shop/all")
-def get_all_shops():
-    try:
-        shops = list(col_shop.find())
-        for s in shops:
-            s["_id"] = str(s["_id"])
-        return {"status": True, "data": shops}
-    except Exception as e:
-        return {"status": False, "error": str(e)}
+
 # SHOP PHOTOS API
-@router.get("/shop/photos")
-def get_shop_photos(id: str):
+@router.get(
+    "/shop/{shop_id}/photos/",
+    operation_id="getShopPhotos"
+)
+def get_shop_photos(shop_id: str):
     try:
-        shop = col_shop.find_one({"_id": ObjectId(id)})
+        shop = col_shop.find_one({"_id": ObjectId(shop_id)})
         if not shop:
             return {"status": False, "message": "Shop not found"}
 
@@ -46,10 +43,13 @@ def get_shop_photos(id: str):
     except Exception as e:
         return {"status": False, "error": str(e)}
 # GET REVIEWS FOR A SHOP
-@router.get("/shop/reviews")
-def get_reviews(id: str):
+@router.get(
+    "/shop/{shop_id}/reviews/",
+    operation_id="getShopReviews"
+)
+def get_reviews(shop_id: str):
     try:
-        reviews = list(col_reviews.find({"shop_id": id}))
+        reviews = list(col_reviews.find({"shop_id": shop_id}))
         for r in reviews:
             r["_id"] = str(r["_id"])
         return {"status": True, "reviews": reviews}
@@ -58,12 +58,16 @@ def get_reviews(id: str):
         return {"status": False, "error": str(e)}
 
 # ADD REVIEW
-@router.post("/shop/review/add")
+@router.post(
+    "/shop/{shop_id}/review/",
+    operation_id="addShopReview"
+)
 def add_review(payload: dict):
     try:
         shop_id = payload.get("shop_id")
         rating = payload.get("rating")
         review = payload.get("review")
+        username = payload.get("username")  # required
 
         if not shop_id:
             return {"status": False, "message": "shop_id missing"}
@@ -71,11 +75,15 @@ def add_review(payload: dict):
             return {"status": False, "message": "rating missing"}
         if not review:
             return {"status": False, "message": "review missing"}
+        if not username:
+            return {"status": False, "message": "username missing"}
 
         data = {
             "shop_id": shop_id,
-            "rating": rating,
+            "rating": int(rating),
             "review": review,
+            "username": username,
+            "date": datetime.now().strftime("%d-%m-%Y"),
         }
 
         inserted = col_reviews.insert_one(data)
@@ -84,4 +92,4 @@ def add_review(payload: dict):
         return {"status": True, "message": "Review added", "data": data}
 
     except Exception as e:
-        return {"status": False, "error": str(e)}
+        return {"status": False, "message": f"Error: {str(e)}"}
