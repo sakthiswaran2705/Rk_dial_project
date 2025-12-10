@@ -2,7 +2,8 @@ from fastapi import APIRouter, Form, UploadFile, File, Query
 from bson import ObjectId
 from datetime import datetime
 import hashlib, base64
-from api.common_urldb import db
+from common_urldb import db
+from FullstakFastAPI.api.utils.email_sender import send_email
 
 router = APIRouter()
 
@@ -10,7 +11,7 @@ col_user = db["user"]
 col_shop = db["shop"]
 col_city = db["city"]
 col_category = db["category"]
-col_offers = db["slideshow"]
+col_offers = db["offers"]
 
 
 def hash_password(pwd):
@@ -21,54 +22,121 @@ def oid(x):
     return str(x) if isinstance(x, ObjectId) else x
 
 
-#REGISTER
-@router.post("/register/")
-def register(email: str = Form(...), password: str = Form(...)):
-    if col_user.find_one({"email": email}):
-        return {"status": "error", "message": "Email already exists"}
+# REGISTER
+@router.post(
+    "/register/",
+    operation_id="registerUser"
+)
+def register(
+    firstname: str | None = Form(None),
+    lastname: str | None = Form(None),
+    email: str | None = Form(None),
+    phone: str | None = Form(None),
+    password: str = Form(...)
+):
+    # REQUIRE EMAIL OR PHONE
+    if not email and not phone:
+        return {"status": False, "message": "Email or phone number required"}
 
+    # CLEAN EMAIL & PHONE
+    if email:
+        email = email.strip().lower()
+    if phone:
+        phone = phone.strip()
+
+    # CHECK UNIQUE EMAIL
+    if email and col_user.find_one({"email": email}):
+        return {"status": False, "message": "Email already exists"}
+
+    # CHECK UNIQUE PHONE
+    if phone and col_user.find_one({"phonenumber": phone}):
+        return {"status": False, "message": "Phone number already exists"}
+
+    # HASH PASSWORD
     hashed_pwd = hash_password(password)
-    user_id = col_user.insert_one({"email": email, "password": hashed_pwd}).inserted_id
 
-    return {"status": "success", "user_id": str(user_id)}
+    # USER DATA OBJECT
+    user_data = {
+        "password": hashed_pwd,
+        "firstname": firstname,
+        "lastname": lastname,
+        "created_at": datetime.utcnow()
+    }
+
+    # ADD EMAIL & PHONE IF PRESENT
+    if email:
+        user_data["email"] = email
+    if phone:
+        user_data["phonenumber"] = phone
+
+    # INSERT USER
+    user_id = col_user.insert_one(user_data).inserted_id
+
+    return {
+        "status": True,
+        "user_id": str(user_id),
+        "message": "Registered successfully"
+    }
 
 
-#LOGIN
-@router.post("/login/")
-def login(email: str = Form(...), password: str = Form(...)):
-    user = col_user.find_one({"email": email})
+# LOGIN
+@router.post(
+    "/login/",
+    operation_id="loginUser"
+)
+def login(emailorphone: str = Form(...), password: str = Form(...)):
+    identifier = emailorphone.strip().lower()
+
+    user = col_user.find_one({
+        "$or": [
+            {"email": identifier},
+            {"phonenumber": identifier}
+        ]
+    })
 
     if not user or hash_password(password) != user["password"]:
-        return {"status": "error", "message": "Invalid email or password"}
+        return {"status": False, "message": "Invalid login credentials"}
 
     result = get_user_shops(str(user["_id"]))
     shops = result.get("data", [])
 
     return {
-        "status": "success",
+        "status": True,
         "data": {
             "user_id": str(user["_id"]),
+            "email": user.get("email"),
+            "phonenumber": user.get("phonenumber"),
             "shops": shops
         }
     }
 
-
-#SEARCH CATEGORY
-@router.get("/search/category")
-def search_category(query: str = Query("")):
-    data = list(col_category.find({"name": {"$regex": query, "$options": "i"}}))
+# SEARCH CATEGORY
+@router.get(
+    "/category/search/",
+    operation_id="searchCategory"
+)
+def search_category(category: str = Query("")):
+    data = list(col_category.find({"name": {"$regex": category, "$options": "i"}}))
     return {"status": "success", "data": [{**item, "_id": oid(item["_id"])} for item in data]}
 
 
-#SEARCH CITY
-@router.get("/search/city")
-def search_city(query: str = Query("")):
-    data = list(col_city.find({"city_name": {"$regex": query, "$options": "i"}}).limit(20))
+# SEARCH CITY
+@router.get(
+    "/city/search",
+    operation_id="searchCity"
+)
+def search_city(city_name: str = Query("")):
+    data = list(col_city.find({"city_name": {"$regex": city_name, "$options": "i"}}).limit(20))
     return {"status": "success", "data": [{**item, "_id": oid(item["_id"])} for item in data]}
 
 
-#ADD SHOP
-@router.post("/add/shop/")
+
+# ADD SHOP
+@router.post(
+    "/shop/add/",
+    operation_id="addShop",
+    summary="Add a new shop"
+)
 def add_shop(
     user_id: str = Form(...),
     shop_name: str = Form(...),
@@ -90,14 +158,18 @@ def add_shop(
     except:
         return {"status": "error", "message": "Invalid user id"}
 
-    city_data = {"city_name": city_name, "district": district, "pincode": pincode, "state": state}
+    city_data = {
+        "city_name": city_name,
+        "district": district,
+        "pincode": pincode,
+        "state": state
+    }
     existing_city = col_city.find_one(city_data)
     city_id = existing_city["_id"] if existing_city else col_city.insert_one(city_data).inserted_id
 
     cat_ids = []
     for name in category_list.split(","):
-        name = name.strip()
-        cat = col_category.find_one({"name": name})
+        cat = col_category.find_one({"name": name.strip()})
         if not cat:
             return {"status": "error", "message": f"Category '{name}' not found"}
         cat_ids.append(str(cat["_id"]))
@@ -107,7 +179,7 @@ def add_shop(
         for f in photos:
             photos_b64.append(base64.b64encode(f.file.read()).decode())
 
-    col_shop.insert_one({
+    inserted = col_shop.insert_one({
         "shop_name": shop_name,
         "description": description,
         "address": address,
@@ -117,18 +189,45 @@ def add_shop(
         "category": cat_ids,
         "city_id": str(city_id),
         "photos": photos_b64,
-        "keywords": [k.strip() for k in keywords.split(",") if k.strip()],
-        "user_id": u_oid
+        "keywords": [k.strip() for k in keywords.split(",")],
+        "user_id": u_oid,
+        "created_at": datetime.utcnow(),
+        "status": "pending"
     })
 
-    return {"status": "success", "message": "Shop added"}
+    pending_id = str(inserted.inserted_id)
+
+    admin_email = "sakthibala2705@gmail.com"
+    subject = "New Shop Approval Request"
+
+    approve_link = f"http://127.0.0.1:8000/admin?shop_id={pending_id}"
+
+    body = f"""
+    <h2>New Shop Pending Approval</h2>
+    <p><b>Shop Name:</b> {shop_name}</p>
+    <p><b>Owner Email:</b> {email}</p>
+    <p><b>Phone Number:</b> {phone_number}</p>
+    <p>
+        <a href="{approve_link}" 
+        style="padding:10px 18px; background:#28a745; color:white; 
+        text-decoration:none; border-radius:6px;">
+            APPROVE SHOP
+        </a>
+    </p>
+    """
+
+    send_email(admin_email, subject, body)
+
+    return {"status": "success", "message": "Shop submitted. Waiting for admin approval."}
 
 
-#UPDATE SHOP  (OWNER ONLY)
-@router.post("/update/shop/")
+# UPDATE SHOP
+@router.post(
+    "/shop/update/{shop_id}/",
+    operation_id="updateShop"
+)
 def update_shop(
-    shop_id: str = Form(...),
-    user_id: str = Form(...),   
+    shop_id: str,
     shop_name: str = Form(None),
     description: str = Form(None),
     address: str = Form(None),
@@ -145,16 +244,8 @@ def update_shop(
 ):
     try:
         soid = ObjectId(shop_id)
-        user_oid = ObjectId(user_id)
     except:
-        return {"status": "error", "message": "Invalid id format"}
-
-    shop = col_shop.find_one({"_id": soid})
-    if not shop:
-        return {"status": "error", "message": "Shop not found"}
-
-    if shop["user_id"] != user_oid:
-        return {"status": "error", "message": "Unauthorized: Not your shop"}
+        return {"status": "error", "message": "Invalid shop id"}
 
     update = {}
 
@@ -193,41 +284,35 @@ def update_shop(
     return {"status": "success", "message": "Shop updated"}
 
 
-# DELETE SHOP  (OWNER ONLY)
-@router.post("/delete/shop/{shop_id}")
-def delete_shop(shop_id: str = Form(...), user_id: str = Form(...)):
+# DELETE SHOP
+@router.delete(
+    "/shop/delete/{shop_id}/",
+    operation_id="deleteShop"
+)
+def delete_shop(shop_id: str):
     try:
         soid = ObjectId(shop_id)
-        user_oid = ObjectId(user_id)
     except:
-        return {"status": "error", "message": "Invalid id format"}
+        return {"status": "error", "message": "Invalid shop id"}
+
+    res = col_shop.delete_one({"_id": soid})
+    return {"status": "success", "message": "Shop deleted"} if res.deleted_count else {"status": "error", "message": "Shop not found"}
+
+
+# DELETE SHOP PHOTO
+@router.post(
+    "/shop/{shop_id}/photo/{photo_index}/delete/",
+    operation_id="deleteShopPhoto"
+)
+def delete_photo(shop_id: str, photo_index: int):
+    try:
+        soid = ObjectId(shop_id)
+    except:
+        return {"status": "error", "message": "Invalid shop id"}
 
     shop = col_shop.find_one({"_id": soid})
     if not shop:
         return {"status": "error", "message": "Shop not found"}
-
-    if shop["user_id"] != user_oid:
-        return {"status": "error", "message": "Unauthorized: Not your shop"}
-
-    col_shop.delete_one({"_id": soid})
-    return {"status": "success", "message": "Shop deleted"}
-
-
-#DELETE SHOP PHOTO  (OWNER ONLY)
-@router.post("/delete/photo/")
-def delete_photo(shop_id: str = Form(...), photo_index: int = Form(...), user_id: str = Form(...)):
-    try:
-        soid = ObjectId(shop_id)
-        user_oid = ObjectId(user_id)
-    except:
-        return {"status": "error", "message": "Invalid id format"}
-
-    shop = col_shop.find_one({"_id": soid})
-    if not shop:
-        return {"status": "error", "message": "Shop not found"}
-
-    if shop["user_id"] != user_oid:
-        return {"status": "error", "message": "Unauthorized: Not your shop"}
 
     photos = shop.get("photos", [])
     if not (0 <= photo_index < len(photos)):
@@ -235,12 +320,15 @@ def delete_photo(shop_id: str = Form(...), photo_index: int = Form(...), user_id
 
     photos.pop(photo_index)
     col_shop.update_one({"_id": soid}, {"$set": {"photos": photos}})
-
     return {"status": "success", "message": "Photo deleted"}
 
 
-#GET SHOPS WITH OFFERS
-@router.get("/get_shops/{user_id}")
+
+# GET SHOPS + OFFERS
+@router.get(
+    "/myshop/{user_id}/",
+    operation_id="getUserShops"
+)
 def get_user_shops(user_id: str):
     try:
         uid = ObjectId(user_id)
@@ -264,20 +352,33 @@ def get_user_shops(user_id: str):
 
         city_doc = None
         if s.get("city_id"):
-            c = col_city.find_one({"_id": ObjectId(s["city_id"])})
-            if c:
-                city_doc = {k: oid(v) for k, v in c.items()}
+            try:
+                c = col_city.find_one({"_id": ObjectId(s["city_id"])})
+                if c:
+                    city_doc = {k: oid(v) for k, v in c.items()}
+            except:
+                pass
 
-        offer_docs = list(col_offers.find({"shop_ids": s_clean["_id"]}).sort("uploaded_at", -1))
-        offers_b64, offers_types, offer_ids = [], [], []
+        offers_b64 = []
+        offers_types = []
+        offer_ids = []
+
+        offer_docs = list(col_offers.find({"shop_id": s_clean["_id"]}))
 
         for od in offer_docs:
-            fb64 = od.get("file_base64")
-            ftype = od.get("file_type", "image")
-            if fb64:
-                offers_b64.append(fb64)
-                offers_types.append(ftype)
+            top = od.get("file_b64") or od.get("file_base64")
+            if top:
+                offers_b64.append(top)
+                offers_types.append(od.get("file_type", "image"))
                 offer_ids.append(oid(od["_id"]))
+
+            nested = od.get("offers", [])
+            for o in nested:
+                fb = o.get("file_base64") or o.get("file_b64")
+                if fb:
+                    offers_b64.append(fb)
+                    offers_types.append(o.get("file_type", "image"))
+                    offer_ids.append(o.get("offer_id") or oid(od["_id"]))
 
         final.append({
             "shop": s_clean,
@@ -290,78 +391,207 @@ def get_user_shops(user_id: str):
 
     return {"status": "success", "data": final}
 
-
-#ADD OFFER
-@router.post("/add/offer/{user_id}")
-def add_offer(user_id: str = Form(...), target_shop: str = Form(...), file: UploadFile = File(...)):
+# ADD OFFER
+@router.post(
+    "/offer/add/",
+    operation_id="addOffer"
+)
+async def add_offer_api(
+    user_id: str ,
+    target_shop_id: str = Form(...),
+    title: str = Form(""),
+    fee: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    percentage: str = Form(""),
+    description: str = Form(""),
+    file: UploadFile = File(...)
+):
     try:
         u_oid = ObjectId(user_id)
     except:
-        return {"status": "error", "message": "Invalid user id"}
+        return {"status": False, "message": "Invalid user ID"}
 
-    shop_ids, city_ids = [], []
-
-    if target_shop == "ALL":
+    # If "ALL" shops selected add offer to every shop owned by user
+    if target_shop_id == "ALL":
         shops = list(col_shop.find({"user_id": u_oid}))
         if not shops:
-            return {"status": "error", "message": "No shops found"}
-        for s in shops:
-            shop_ids.append(str(s["_id"]))
-            city_ids.append(s.get("city_id"))
-
+            return {"status": False, "message": "No shops found"}
+        shop_ids = [str(s["_id"]) for s in shops]
     else:
-        try:
-            soid = ObjectId(target_shop)
-        except:
-            return {"status": "error", "message": "Invalid shop id"}
+        shop_ids = [target_shop_id]
 
-        shop = col_shop.find_one({"_id": soid})
-        if not shop:
-            return {"status": "error", "message": "Shop not found"}
+    # FILE VALIDATION
+    file_bytes = file.file.read()
+    if not file_bytes:
+        return {"status": False, "message": "Empty file"}
 
-        if shop["user_id"] != u_oid:
-            return {"status": "error", "message": "Unauthorized: Not your shop"}
+    file_b64 = base64.b64encode(file_bytes).decode()
+    ftype = "video" if file.content_type.lower().startswith("video") else "image"
 
-        shop_ids.append(str(shop["_id"]))
-        city_ids.append(shop.get("city_id"))
-
-    fbytes = file.file.read()
-    fb64 = base64.b64encode(fbytes).decode()
-
-    if file.content_type.startswith("video/"):
-        ftype = "video"
-    elif file.content_type.startswith("image/"):
-        ftype = "image"
-    else:
-        return {"status": "error", "message": "Only image/video allowed"}
-
-    col_offers.insert_one({
-        "user_id": user_id,
-        "shop_ids": shop_ids,
-        "city_ids": city_ids,
-        "file_base64": fb64,
+    # OFFER OBJECT
+    offer_obj = {
+        "offer_id": str(ObjectId()),
+        "file_base64": file_b64,
         "file_type": ftype,
         "filename": file.filename,
         "uploaded_at": datetime.utcnow(),
-    })
+        "status": "pending",
+        "title": title,
+        "fee": fee,
+        "start_date": start_date,
+        "end_date": end_date,
+        "percentage": percentage,
+        "description": description
+    }
 
-    return {"status": "success", "message": "Offer added successfully"}
+    # SAVE OFFER TO DB
+    for sid in shop_ids:
+        exist = col_offers.find_one({"shop_id": sid})
 
-# DELETE OFFER (OWNER ONLY)
-@router.post("/delete/offer/offer_id")
-def delete_offer(offer_id: str = Form(...), user_id: str = Form(...)):
+        if exist:
+            col_offers.update_one(
+                {"shop_id": sid},
+                {"$push": {"offers": offer_obj}}
+            )
+        else:
+            col_offers.insert_one({
+                "shop_id": sid,
+                "user_id": user_id,
+                "offers": [offer_obj],
+                "status": "pending",
+                "approved_at": None,
+                "created_at": datetime.utcnow()
+            })
     try:
-        oidv = ObjectId(offer_id)
-        user_oid = ObjectId(user_id)
+        # Get user details
+        user = col_user.find_one({"_id": u_oid})
+        user_email = user.get("email", "No Email")
+        user_phone = user.get("phonenumber", "No Phone")
+
+        # Get shop names
+        shop_names = []
+        for sid in shop_ids:
+            shop_doc = col_shop.find_one({"_id": ObjectId(sid)})
+            if shop_doc:
+                shop_names.append(shop_doc.get("shop_name", "Unknown Shop"))
+
+        shop_list_str = ", ".join(shop_names)
+
+        admin_email = "sakthibala2705@gmail.com"
+        subject = "New Offer Added – Approval Required"
+
+        body = f"""
+        <h2>New Offer Submitted</h2>
+
+        <p><b>Submitted By:</b> {user_email} ({user_phone})</p>
+
+        <p><b>Target Shops:</b> {shop_list_str}</p>
+
+        <h3>Offer Details</h3>
+        <ul>
+            <li><b>Title:</b> {title}</li>
+            <li><b>Fee:</b> {fee}</li>
+            <li><b>Percentage:</b> {percentage}</li>
+            <li><b>Start Date:</b> {start_date}</li>
+            <li><b>End Date:</b> {end_date}</li>
+            <li><b>Description:</b> {description}</li>
+        </ul>
+
+        <p><b>Status:</b> Pending Approval</p>
+        """
+
+        # Send mail
+        send_email(admin_email, subject, body)
+
+    except Exception as e:
+        print("MAIL ERROR:", e)
+    return {"status": True, "message": "Offer added successfully"}
+#update offer
+@router.post(
+    "/offer/update/",
+    operation_id="updateOffer"
+)
+@router.post("/offer/update/")
+async def update_offer_api(
+    offer_id: str = Form(...),
+    shop_id: str = Form(...),
+    title: str = Form(""),
+    fee: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    percentage: str = Form(""),
+    description: str = Form(""),
+    file: UploadFile = File(None)   # Optional file update
+):
+    # Find shop offers document
+    offer_doc = col_offers.find_one({"shop_id": shop_id})
+    if not offer_doc:
+        return {"status": False, "message": "No offers found for this shop"}
+
+    # Find the specific offer
+    offers = offer_doc.get("offers", [])
+    target_offer = None
+
+    for o in offers:
+        if o["offer_id"] == offer_id:
+            target_offer = o
+            break
+
+    if not target_offer:
+        return {"status": False, "message": "Offer not found"}
+
+    # Update fields
+    target_offer["title"] = title
+    target_offer["fee"] = fee
+    target_offer["start_date"] = start_date
+    target_offer["end_date"] = end_date
+    target_offer["percentage"] = percentage
+    target_offer["description"] = description
+
+    # If new file uploaded → update
+    if file:
+        file_bytes = file.file.read()
+        if not file_bytes:
+            return {"status": False, "message": "Empty file"}
+
+        file_b64 = base64.b64encode(file_bytes).decode()
+        ftype = "video" if file.content_type.lower().startswith("video") else "image"
+
+        target_offer["file_base64"] = file_b64
+        target_offer["file_type"] = ftype
+        target_offer["filename"] = file.filename
+        target_offer["uploaded_at"] = datetime.utcnow()
+
+    # Save modified array
+    col_offers.update_one(
+        {"shop_id": shop_id},
+        {"$set": {"offers": offers}}
+    )
+
+    return {"status": True, "message": "Offer updated successfully"}
+
+# DELETE OFFER
+@router.delete(
+    "/delete/offer/",
+    operation_id="deleteOffer"
+)
+def delete_offer(offer_id: str = Form(...)):
+    try:
+        obj_id = ObjectId(offer_id)
+        res = col_offers.delete_one({"_id": obj_id})
+        if res.deleted_count > 0:
+            return {"status": "success", "message": "Offer deleted (document removed)"}
     except:
-        return {"status": "error", "message": "Invalid id format"}
+        pass
 
-    offer = col_offers.find_one({"_id": oidv})
-    if not offer:
-        return {"status": "error", "message": "Offer not found"}
+    docs = col_offers.find({"offers.offer_id": offer_id})
 
-    if offer["user_id"] != str(user_oid):
-        return {"status": "error", "message": "Unauthorized: Not your offer"}
+    for d in docs:
+        col_offers.update_one(
+            {"_id": d["_id"]},
+            {"$pull": {"offers": {"offer_id": offer_id}}}
+        )
+        return {"status": "success", "message": "Offer deleted (nested removed)"}
 
-    col_offers.delete_one({"_id": oidv})
-    return {"status": "success", "message": "Offer deleted"}
+    return {"status": "error", "message": "Offer not found"}
