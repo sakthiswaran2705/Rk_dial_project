@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 from bson import ObjectId
-from api.common_urldb import db
+from common_urldb import db
 router = APIRouter()
 
 col_shop = db["shop"]
@@ -17,7 +17,10 @@ def safe(x):
         return {k: safe(v) for k, v in x.items()}
     return x
 
-@router.get("/place/category/")
+@router.get(
+    "/shop/search/",
+    operation_id="searchShop"
+)
 def get_static(
     place: str | None = Query(None),
     name: str | None = Query(None)
@@ -43,15 +46,19 @@ def get_static(
 
     matched_cat_ids = [c["_id"] for c in matched_categories]
 
-    # SHOP QUERY
     query = {
-        "$or": [
-            {"name": {"$regex": name_lower, "$options": "i"}},
-            {"shop_name": {"$regex": name_lower, "$options": "i"}},
-            {"keywords": {"$regex": name_lower, "$options": "i"}},
-            {"category": {"$in": matched_cat_ids}},
-            {"category": {"$in": [str(x) for x in matched_cat_ids]}},
-            {"category": {"$regex": name_lower, "$options": "i"}},
+        "$and": [
+            { "status": "approved" },
+            {
+                "$or": [
+                    {"name": {"$regex": name_lower, "$options": "i"}},
+                    {"shop_name": {"$regex": name_lower, "$options": "i"}},
+                    {"keywords": {"$regex": name_lower, "$options": "i"}},
+                    {"category": {"$in": matched_cat_ids}},
+                    {"category": {"$in": [str(x) for x in matched_cat_ids]}},
+                    {"category": {"$regex": name_lower, "$options": "i"}},
+                ]
+            }
         ]
     }
 
@@ -105,11 +112,11 @@ def get_static(
             "city": safe(city) if city else None,
             "photo": safe(photo),
             "shop_name": s.get("shop_name") or s.get("name") or "",
-            "avg_rating": round(avg_rating, 1),  
+            "avg_rating": round(avg_rating, 1),
             "reviews_count": len(shop_reviews),
         })
 
-    #SORT HIGH TO  LOW RATING
+    # SORT HIGH TO LOW RATING
     final_output.sort(key=lambda x: x["avg_rating"], reverse=True)
 
     return {"data": final_output}
