@@ -19,7 +19,7 @@ def safe(doc):
 
 
 @router.get(
-    "/offers/{city}",
+    "/offers/{city}/",
     operation_id="getOffersByCity",
     summary="Get offers by city"
 )
