@@ -98,9 +98,7 @@ def login(emailorphone: str = Form(...), password: str = Form(...)):
     access_token = create_access_token({"user_id": user_id_str})
     refresh_token = create_refresh_token({"user_id": user_id_str})
 
-    # Fetch user shops (public call)
-    result = get_user_shops(user_id_str)
-    shops = result.get("data", [])
+
 
     return {
         "status": True,
