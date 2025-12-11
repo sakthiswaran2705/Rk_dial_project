@@ -3,7 +3,7 @@ from bson import ObjectId
 from datetime import datetime
 import hashlib, base64
 
-from api.common_urldb import db
+from api.common_db_url import db
 from api.email_sender import send_email
 from api.auth_jwt import (
     create_access_token,
