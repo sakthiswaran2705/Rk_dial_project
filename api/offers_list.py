@@ -10,7 +10,7 @@ col_slideshow = db["offers"]    # same collection name as slideshow
 
 
 @router.get(
-    "/offers/list/{city_name}",
+    "/offers/list/{city_name}/",
     operation_id="getOffersByCityshops",
     summary="Get all offers by city"
 )
