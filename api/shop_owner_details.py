@@ -3,7 +3,7 @@ from bson import ObjectId
 from datetime import datetime
 import hashlib, base64
 from api.common_db_url import db
-from FullstakFastAPI.api.utils.email_sender import send_email
+from api.email_sender import send_email
 
 router = APIRouter()
 
