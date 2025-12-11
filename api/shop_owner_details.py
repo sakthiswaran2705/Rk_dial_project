@@ -111,7 +111,7 @@ def login(emailorphone: str = Form(...), password: str = Form(...)):
             "user_id": user_id_str,
             "email": user.get("email"),
             "phonenumber": user.get("phonenumber"),
-            "shops": shops
+            
         }
     }
 
