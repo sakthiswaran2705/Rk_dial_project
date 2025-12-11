@@ -77,11 +77,14 @@ def register(
     }
 
 
+
+
 # LOGIN returns access + refresh token
 @router.post("/login/", operation_id="loginUser")
 def login(emailorphone: str = Form(...), password: str = Form(...)):
     identifier = emailorphone.strip().lower()
 
+    # Find user by email OR phone
     user = col_user.find_one({
         "$or": [
             {"email": identifier},
@@ -89,6 +92,7 @@ def login(emailorphone: str = Form(...), password: str = Form(...)):
         ]
     })
 
+    # Invalid login
     if not user or hash_password(password) != user["password"]:
         return {"status": False, "message": "Invalid login credentials"}
 
@@ -98,8 +102,18 @@ def login(emailorphone: str = Form(...), password: str = Form(...)):
     access_token = create_access_token({"user_id": user_id_str})
     refresh_token = create_refresh_token({"user_id": user_id_str})
 
+    # Detect login method
+    used_email = user.get("email")
+    used_phone = user.get("phonenumber")
 
+    if identifier == used_email:
+        login_method = "email"
+        value_used = used_email
+    else:
+        login_method = "phone"
+        value_used = used_phone
 
+    # Final response
     return {
         "status": True,
         "message": "Login successfully",
@@ -107,12 +121,10 @@ def login(emailorphone: str = Form(...), password: str = Form(...)):
         "refresh_token": refresh_token,
         "data": {
             "user_id": user_id_str,
-            "email": user.get("email"),
-            "phonenumber": user.get("phonenumber"),
-            
+            "login_method": login_method,  # email OR phone
+            "value": value_used             # exact value used to login
         }
     }
-
 
 # REFRESH TOKEN = returns new access token
 @router.post("/refresh/", operation_id="refreshToken")
