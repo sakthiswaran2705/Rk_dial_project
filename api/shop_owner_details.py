@@ -576,9 +576,9 @@ async def update_offer_api(
 @router.delete("/delete/offer/", operation_id="deleteOffer")
 def delete_offer(
     user_id: str = Depends(verify_token),
-    offer_id: str = Form(...)
+    offer_id: str = Query(...)
 ):
-    # Try deleting entire document
+    # Try deleting whole document first
     try:
         obj_id = ObjectId(offer_id)
         res = col_offers.delete_one({"_id": obj_id})
@@ -588,10 +588,10 @@ def delete_offer(
         pass
 
     # Try removing nested offer
-    docs = col_offers.find({"offers.offer_id": offer_id})
-    for d in docs:
+    doc = col_offers.find_one({"offers.offer_id": offer_id})
+    if doc:
         col_offers.update_one(
-            {"_id": d["_id"]},
+            {"_id": doc["_id"]},
             {"$pull": {"offers": {"offer_id": offer_id}}}
         )
         return {"status": "success", "message": "Offer removed"}
