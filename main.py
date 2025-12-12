@@ -7,7 +7,7 @@ from api.shop_owner_details import router as owner_router
 from api.searched_detail_showhome import router as searched_detail_router
 from api.offers_city import router as slideshow_router
 from api.offers_list import router as offer_router
-from api.offfers_for_particular_shop import router as particular_offer_router
+from api.offers_for_particular_shop import router as particular_offer_router
 app = FastAPI(
     title="RK-DIAL API",
     description="API endpoints for RK-Dial Application",
