@@ -126,16 +126,18 @@ def login(emailorphone: str = Form(...), password: str = Form(...)):
         }
     }
 
-# REFRESH TOKEN = returns new access token
+# REFRESH TOKEN 
 @router.post("/refresh/", operation_id="refreshToken")
-def refresh_token(refresh_token: str = Body(...)):
+def refresh_token_api(refresh_token: str = Body(...)):
     user_id = verify_refresh_token(refresh_token)
-    new_access_token = create_access_token({"user_id": user_id})
+
+    new_access = create_access_token({"user_id": user_id})
+    new_refresh = create_refresh_token({"user_id": user_id})
+
     return {
         "status": True,
-        "access_token": new_access_token,
-        "token_type": "bearer",
-        "access_expires_in": 3600
+        "access_token": new_access,
+        "refresh_token": new_refresh
     }
 
 
