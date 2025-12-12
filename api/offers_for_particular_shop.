@@ -1,12 +1,12 @@
 from fastapi import APIRouter
 from bson import ObjectId
-from common_urldb import db
+from api.common_db_url import db
 
 router = APIRouter()
 
-col_offers = db["offers"]   # { shop_id: "id", offers: [...] }
+col_offers = db["offers"]   
 
-@router.get("/offers/shop/{shop_id}/")
+@router.get("/offers/shop/{shop_id}/", summary="Get offers for a shop")
 def get_offers_for_shop(shop_id: str):
 
     try:
