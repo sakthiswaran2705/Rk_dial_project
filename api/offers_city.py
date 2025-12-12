@@ -25,7 +25,7 @@ def safe(doc):
 )
 def get_offers(city: str):
 
-    # Find matching city (case-insensitive)
+    # Find matching city 
     city_list = list(col_city.find({
         "city_name": {"$regex": f"^{city}$", "$options": "i"}
     }))
@@ -35,7 +35,7 @@ def get_offers(city: str):
 
     final_city = None
 
-    # Use the first city that has at least 1 shop
+    
     for c in city_list:
         cid = str(c["_id"])
         shop_exist = col_shop.find_one({"city_id": cid})
@@ -54,7 +54,7 @@ def get_offers(city: str):
 
     slides = []
 
-    # Loop shops → offers
+  
     for shop in shops:
         shop_id = str(shop["_id"])
 
