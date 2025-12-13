@@ -94,3 +94,37 @@ def add_review_api(
 
     except Exception as e:
         return {"status": False, "message": f"Error: {str(e)}"}
+@router.delete("/review/delete/added/person/", operation_id="deleteReview")
+def delete_review(
+    user_id: str = Depends(verify_token),   # Logged-in user from JWT
+    review_id: str = Form(...)
+):
+    try:
+        # Validate review_id
+        try:
+            oid = ObjectId(review_id)
+        except:
+            return {"status": False, "message": "Invalid review_id"}
+
+        # Find review
+        review = col_reviews.find_one({"_id": oid})
+        if not review:
+            return {"status": False, "message": "Review not found"}
+
+
+        if review.get("username") != user_id:
+            return {
+                "status": False,
+                "message": "You are not allowed to delete this review"
+            }
+
+        # Delete review
+        col_reviews.delete_one({"_id": oid})
+
+        return {
+            "status": True,
+            "message": "Review deleted successfully"
+        }
+
+    except Exception as e:
+        return {"status": False, "message": str(e)}
