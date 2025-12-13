@@ -1,14 +1,12 @@
 from fastapi import APIRouter, Query
 from bson import ObjectId
 from api.common_db_url import db
-
 router = APIRouter()
 
 col_shop = db["shop"]
 col_city = db["city"]
 col_category = db["category"]
 col_reviews = db["reviews"]
-
 
 def safe(x):
     if isinstance(x, ObjectId):
@@ -18,7 +16,6 @@ def safe(x):
     if isinstance(x, dict):
         return {k: safe(v) for k, v in x.items()}
     return x
-
 
 @router.get(
     "/shop/search/",
@@ -35,6 +32,7 @@ def get_static(
     name_lower = name.lower()
     place_lower = place.lower() if place else None
 
+    # CATEGORY CHECK
     cat_object_id = ObjectId(name) if ObjectId.is_valid(name) else None
 
     matched_categories = list(col_category.find({
@@ -48,27 +46,17 @@ def get_static(
 
     matched_cat_ids = [c["_id"] for c in matched_categories]
 
-    matched_cities = list(col_city.find({
-        "city_name": {"$regex": name_lower, "$options": "i"}
-    }))
-    matched_city_ids = [c["_id"] for c in matched_cities]
-
     query = {
         "$and": [
-            {"status": "approved"},
+            { "status": "approved" },
             {
                 "$or": [
                     {"name": {"$regex": name_lower, "$options": "i"}},
                     {"shop_name": {"$regex": name_lower, "$options": "i"}},
                     {"keywords": {"$regex": name_lower, "$options": "i"}},
-
-                    # Category match
                     {"category": {"$in": matched_cat_ids}},
                     {"category": {"$in": [str(x) for x in matched_cat_ids]}},
                     {"category": {"$regex": name_lower, "$options": "i"}},
-
-                    # CITY match (Important for suggestion)
-                    {"city_id": {"$in": matched_city_ids}},
                 ]
             }
         ]
@@ -76,17 +64,19 @@ def get_static(
 
     shops = list(col_shop.find(query))
     final_output = []
+
+    # CALCULATE RATINGS
     for s in shops:
         sid = str(s["_id"])
         shop_reviews = list(col_reviews.find({"shop_id": sid}))
 
-        # Rating
-        avg_rating = (
-            sum([r.get("rating", 0) for r in shop_reviews]) / len(shop_reviews)
-            if shop_reviews else 0
-        )
+        # AVERAGE RATING
+        if shop_reviews:
+            avg_rating = sum([r.get("rating", 0) for r in shop_reviews]) / len(shop_reviews)
+        else:
+            avg_rating = 0
 
-        # City
+        # CITY FILTER
         city = None
         cid = s.get("city_id")
         if isinstance(cid, ObjectId):
@@ -94,12 +84,11 @@ def get_static(
         elif isinstance(cid, str) and ObjectId.is_valid(cid):
             city = col_city.find_one({"_id": ObjectId(cid)})
 
-        # Filter by place
         if place_lower and city:
             if city.get("city_name", "").lower() != place_lower:
                 continue
 
-        # Categories
+        # CATEGORY LIST
         final_categories = []
         for c in s.get("category", []):
             if isinstance(c, ObjectId):
@@ -111,7 +100,7 @@ def get_static(
             if cat:
                 final_categories.append(safe(cat))
 
-        # Photo
+        # PHOTO
         photo = None
         photos = s.get("photos")
         if isinstance(photos, list) and photos:
@@ -127,7 +116,7 @@ def get_static(
             "reviews_count": len(shop_reviews),
         })
 
-
+    # SORT HIGH TO LOW RATING
     final_output.sort(key=lambda x: x["avg_rating"], reverse=True)
 
     return {"data": final_output}
