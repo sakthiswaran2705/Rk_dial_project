@@ -1,90 +1,156 @@
-from fastapi import APIRouter, Form, UploadFile, File, Query, Depends, Body
+from fastapi import APIRouter, Form, UploadFile, File, Query, HTTPException, Depends, Body, BackgroundTasks
 from bson import ObjectId
 from datetime import datetime
 import hashlib, base64
-
-from api.common_db_url import db
-from api.email_sender import send_email
-from api.auth_jwt import (
+import os, uuid
+from pydantic import BaseModel
+from common_urldb import db
+from email_sender import send_email
+from auth_jwt import (
     create_access_token,
     create_refresh_token,
     verify_token,
     verify_refresh_token,
 )
 
+# --- TRANSLATOR SYSTEM HELPERS ---
+from translator import ta_to_en, en_to_ta
+from cache import get_cached, set_cache
+
+
+def safe(obj):
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, list):
+        return [safe(i) for i in obj]
+    if isinstance(obj, dict):
+        return {k: safe(v) for k, v in obj.items()}
+    return obj
+
+# PHONETIC MAP FOR SMALL LETTERS
+PHONETIC_MAP = {
+    "a": "ஏ", "b": "பி", "c": "சி", "d": "டி",
+    "e": "இ", "f": "எப்", "g": "ஜி", "h": "எச்",
+    "i": "ஐ", "j": "ஜே", "k": "கே", "l": "எல்",
+    "m": "எம்", "n": "என்", "o": "ஓ", "p": "பி",
+    "q": "க்யூ", "r": "ஆர்", "s": "எஸ்", "t": "டி",
+    "u": "யூ", "v": "வி", "w": "டபிள்யூ",
+    "x": "எக்ஸ்", "y": "வை", "z": "ஸெட்"
+}
+
+# Pre-defined set for O(1) skip-key lookups
+SKIP_KEYS = {
+    "_id", "user_id", "shop_id", "city_id", "offer_id",
+    "phone_number", "phonenumber", "email", "created_at",
+    "uploaded_at", "start_date", "end_date", "photos",
+    "file_base64", "file_b64", "pincode", "fee", "percentage"
+}
+
+
+def apply_phonetic_fallback(text: str) -> str:
+    if not text: return text
+    t_strip = text.strip()
+    if len(t_strip) == 1:
+        return PHONETIC_MAP.get(t_strip.lower(), text)
+    if t_strip.isalpha() and len(t_strip) <= 3:
+        return "".join([PHONETIC_MAP.get(char.lower(), char) for char in t_strip])
+    return text
+
+
+def translate_to_en_logic(text: str) -> str:
+    """Translates Tamil to English for DB storage."""
+    if not text or not isinstance(text, str) or text.strip() == "":
+        return text
+    if text.replace(" ", "").isdigit():
+        return text
+    cached = get_cached(text)
+    if cached: return cached
+    try:
+        translated = ta_to_en(text)
+        if translated:
+            set_cache(text, translated)
+            return translated
+    except:
+        pass
+    return text
+
+
+def translate_to_ta_logic(text: str) -> str:
+    """Translates English to Tamil for Response with Phonetic Fallback."""
+    if not text or not isinstance(text, str) or text.strip() == "":
+        return text
+    if text.replace(" ", "").isdigit():
+        return text
+    cached = get_cached(text)
+    if cached: return cached
+
+    # Fast bypass for small codes
+    if len(text) <= 3 and text.isalpha():
+        return apply_phonetic_fallback(text)
+
+    try:
+        translated = en_to_ta(text)
+        if translated and translated.lower() != text.lower():
+            set_cache(text, translated)
+            return translated
+    except:
+        pass
+    return apply_phonetic_fallback(text)
+
+
+def translate_response_data(data, lang: str):
+    """Recursively translates nested data using fast lookups."""
+    if lang != "ta": return data
+    if isinstance(data, list):
+        return [translate_response_data(item, lang) for item in data]
+    if isinstance(data, dict):
+        return {
+            k: (v if k in SKIP_KEYS else translate_response_data(v, lang))
+            if not isinstance(v, str)
+            else (v if k in SKIP_KEYS else translate_to_ta_logic(v))
+            for k, v in data.items()
+        }
+    return data
+
+
+# --- ROUTER AND COLLECTIONS ---
 router = APIRouter()
-
-col_user = db["user"]
-col_shop = db["shop"]
-col_city = db["city"]
-col_category = db["category"]
-col_offers = db["offers"]
+col_user, col_shop, col_city, col_category, col_offers = db["user"], db["shop"], db["city"], db["category"], db[
+    "offers"]
 
 
-
-# PASSWORD HASH
-def hash_password(pwd):
-    return hashlib.sha256(pwd.encode()).hexdigest()
+def hash_password(pwd): return hashlib.sha256(pwd.encode()).hexdigest()
 
 
-def oid(x):
-    return str(x) if isinstance(x, ObjectId) else x
+def oid(x): return str(x) if isinstance(x, ObjectId) else x
 
 
 # REGISTER
 @router.post("/register/", operation_id="registerUser")
-def register(
-    firstname: str | None = Form(None),
-    lastname: str | None = Form(None),
-    email: str | None = Form(None),
-    phone: str | None = Form(None),
-    password: str = Form(...)
-):
-    if not email and not phone:
-        return {"status": False, "message": "Email or phone number required"}
+def register(firstname: str = Form(None), lastname: str = Form(None), email: str = Form(None), phone: str = Form(None),
+             password: str = Form(...)):
+    if not email and not phone: return {"status": False, "message": "Email or phone number required"}
+    email = email.strip().lower() if email else None
+    phone = phone.strip() if phone else None
+    if email and col_user.find_one({"email": email}, {"_id": 1}): return {"status": False,
+                                                                          "message": "Email already exists"}
+    if phone and col_user.find_one({"phonenumber": phone}, {"_id": 1}): return {"status": False,
+                                                                                "message": "Phone number already exists"}
 
-    if email:
-        email = email.strip().lower()
-    if phone:
-        phone = phone.strip()
-
-    if email and col_user.find_one({"email": email}):
-        return {"status": False, "message": "Email already exists"}
-
-    if phone and col_user.find_one({"phonenumber": phone}):
-        return {"status": False, "message": "Phone number already exists"}
-
-    hashed_pwd = hash_password(password)
-
-    user_data = {
-        "password": hashed_pwd,
-        "firstname": firstname,
-        "lastname": lastname,
-        "created_at": datetime.utcnow()
-    }
-
-    if email:
-        user_data["email"] = email
-    if phone:
-        user_data["phonenumber"] = phone
-
-    user_id = col_user.insert_one(user_data).inserted_id
-
-    return {
-        "status": True,
-        "user_id": str(user_id),
-        "message": "Registered successfully"
-    }
+    user_id = col_user.insert_one({
+        "password": hash_password(password), "firstname": firstname, "lastname": lastname,
+        "email": email, "phonenumber": phone, "created_at": datetime.utcnow()
+    }).inserted_id
+    return {"status": True, "user_id": str(user_id), "message": "Registered successfully"}
 
 
-
-
-# LOGIN returns access + refresh token
+# LOGIN
 @router.post("/login/", operation_id="loginUser")
 def login(emailorphone: str = Form(...), password: str = Form(...)):
     identifier = emailorphone.strip().lower()
 
-    # Find user by email OR phone
     user = col_user.find_one({
         "$or": [
             {"email": identifier},
@@ -92,128 +158,180 @@ def login(emailorphone: str = Form(...), password: str = Form(...)):
         ]
     })
 
-    # Invalid login
     if not user or hash_password(password) != user["password"]:
-        return {"status": False, "message": "Invalid login credentials"}
+        return {
+            "status": False,
+            "message": "Invalid login credentials"
+        }
 
-    user_id_str = str(user["_id"])
+    u_id = str(user["_id"])
 
-    # Generate tokens
-    access_token = create_access_token({"user_id": user_id_str})
-    refresh_token = create_refresh_token({"user_id": user_id_str})
-
-    # Detect login method
-    used_email = user.get("email")
-    used_phone = user.get("phonenumber")
-
-    if identifier == used_email:
-        login_method = "email"
-        value_used = used_email
-    else:
-        login_method = "phone"
-        value_used = used_phone
-
-    # Final response
     return {
         "status": True,
         "message": "Login successfully",
-        "access_token": access_token,
-        "refresh_token": refresh_token,
+        "access_token": create_access_token({"user_id": u_id}),
+        "refresh_token": create_refresh_token({"user_id": u_id}),
         "data": {
-            "user_id": user_id_str,
-            "login_method": login_method,  # email OR phone
-            "value": value_used             # exact value used to login
+            "user_id": u_id,
+            "firstname": user.get("firstname", ""),
+            "lastname": user.get("lastname", ""),
+            "profile_image": user.get("profile_image", ""),
+            "login_method": "email" if user.get("email") == identifier else "phone",
+            "value": identifier
         }
     }
 
-# REFRESH TOKEN 
-@router.post("/refresh/", operation_id="refreshToken")
-def refresh_token_api(refresh_token: str = Body(...)):
-    user_id = verify_refresh_token(refresh_token)
 
-    new_access = create_access_token({"user_id": user_id})
-    new_refresh = create_refresh_token({"user_id": user_id})
+# REFRESH
+@router.post("/refresh/", operation_id="refreshToken")
+def refresh_token_api(data: dict = Body(...)):
+    refresh_token = data.get("refresh_token")
+    if not refresh_token: raise HTTPException(status_code=401, detail="Refresh token missing")
+    user_id = verify_refresh_token(refresh_token)
+    return {"status": True, "access_token": create_access_token({"user_id": user_id})}
+
+
+
+
+UPLOAD_DIR = "media/profiles"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@router.post("/profile/upload/image/")
+def upload_profile_image(
+    file: UploadFile = File(...),
+    user_id: str = Depends(verify_token)
+):
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files allowed")
+
+    user = db.user.find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    old_image = user.get("profile_image")
+    if old_image and os.path.exists(old_image):
+        try:
+            os.remove(old_image)
+        except Exception:
+            pass
+
+    ext = file.filename.split(".")[-1].lower()
+    filename = f"{user_id}.{ext}"
+    path = os.path.join(UPLOAD_DIR, filename)
+
+    with open(path, "wb") as f:
+        f.write(file.file.read())
+
+    db.user.update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"profile_image": path}}
+    )
 
     return {
-        "status": True,
-        "access_token": new_access,
-        "refresh_token": new_refresh
+        "success": True,
+        "profile_image": path
     }
+
 
 
 # CATEGORY SEARCH
 @router.get("/category/search/", operation_id="searchCategory")
-def search_category(category: str = Query("")):
-    data = list(col_category.find(
-        {"name": {"$regex": category, "$options": "i"}}
-    ))
-    return {
-        "status": "success",
-        "message": "category searched successfully",
-        "data": [{**item, "_id": oid(item["_id"])} for item in data]
-    }
+def search_category(category: str = Query(""), lang: str = Query("en")):
+    search_term = translate_to_en_logic(category) if lang == "ta" else category
+    data = list(col_category.find({"name": {"$regex": search_term, "$options": "i"}}))
+    results = []
+    for item in data:
+        item_data = {**item, "_id": oid(item["_id"])}
+        if lang == "ta": item_data["name"] = translate_to_ta_logic(item_data.get("name", ""))
+        results.append(item_data)
+    msg = translate_to_ta_logic("category searched successfully") if lang == "ta" else "category searched successfully"
+    return {"status": "success", "message": msg, "data": results}
 
 
 # CITY SEARCH
 @router.get("/city/search/", operation_id="searchCity")
-def search_city(city_name: str = Query("")):
-    data = list(col_city.find(
-        {"city_name": {"$regex": city_name, "$options": "i"}}
-    ).limit(20))
-    return {
-        "status": "success",
-        "message": "city searched successfully",
-        "data": [{**item, "_id": oid(item["_id"])} for item in data]
-    }
+def search_city(city_name: str = Query(""), lang: str = Query("en")):
+    search_term = translate_to_en_logic(city_name) if lang == "ta" else city_name
+    data = list(col_city.find({"city_name": {"$regex": search_term, "$options": "i"}}).limit(20))
+    results = []
+    for item in data:
+        item_data = {**item, "_id": oid(item["_id"])}
+        if lang == "ta":
+            item_data["city_name"] = translate_to_ta_logic(item_data.get("city_name", ""))
+            item_data["district"] = translate_to_ta_logic(item_data.get("district", ""))
+            item_data["state"] = translate_to_ta_logic(item_data.get("state", ""))
+        results.append(item_data)
+    msg = translate_to_ta_logic("city searched successfully") if lang == "ta" else "city searched successfully"
+    return {"status": "success", "message": msg, "data": results}
 
+
+MEDIA_BASE = "media/shop"
 # ADD SHOP
 @router.post("/shop/add/", operation_id="addShop")
 def add_shop(
     user_id: str = Depends(verify_token),
+
     shop_name: str = Form(...),
     description: str = Form(...),
     address: str = Form(...),
     phone_number: str = Form(...),
     email: str = Form(...),
     landmark: str = Form(...),
+
     category_list: str = Form(...),
-    city_name: str = Form(...),
-    district: str = Form(...),
-    pincode: str = Form(...),
-    state: str = Form(...),
-    photos: list[UploadFile] = File(None),
-    keywords: str = Form(...)
+    city_id: str = Form(...),
+
+    media: list[UploadFile] = File(None),     # multiple images
+    main_image: UploadFile = File(None),      # ⭐ single main image
+    keywords: str = Form(...),
+
+    lang: str = Query("en")
 ):
+    # ---------- USER ----------
     try:
         u_oid = ObjectId(user_id)
     except:
-        return {"status": "error", "message": "Invalid user id"}
+        msg = "Invalid user id"
+        return {"status": "error", "message": en_to_ta(msg) if lang == "ta" else msg}
 
-    # City create or find
-    city_data = {
-        "city_name": city_name,
-        "district": district,
-        "pincode": pincode,
-        "state": state
-    }
-    existing_city = col_city.find_one(city_data)
-    city_id = existing_city["_id"] if existing_city else col_city.insert_one(city_data).inserted_id
+    # ---------- TRANSLATE ----------
+    if lang == "ta":
+        shop_name = ta_to_en(shop_name)
+        description = ta_to_en(description)
+        address = ta_to_en(address)
+        landmark = ta_to_en(landmark)
+        keywords = ta_to_en(keywords)
 
-    # Category IDs
+    # ---------- CITY ----------
+    try:
+        city_oid = ObjectId(city_id)
+    except:
+        msg = "Invalid city"
+        return {"status": "error", "message": en_to_ta(msg) if lang == "ta" else msg}
+
+    if not col_city.find_one({"_id": city_oid}, {"_id": 1}):
+        msg = "City not found"
+        return {"status": "error", "message": en_to_ta(msg) if lang == "ta" else msg}
+
+    # ---------- CATEGORY ----------
     cat_ids = []
-    for name in category_list.split(","):
-        cat = col_category.find_one({"name": name.strip()})
+    for raw in category_list.split(","):
+        name = raw.strip()
+        if not name:
+            continue
+
+        db_name = ta_to_en(name) if lang == "ta" else name
+        cat = col_category.find_one(
+            {"name": {"$regex": f"^{db_name}$", "$options": "i"}},
+            {"_id": 1}
+        )
         if not cat:
-            return {"status": "error", "message": f"Category '{name}' not found"}
+            msg = f"Category '{name}' not found"
+            return {"status": "error", "message": en_to_ta(msg) if lang == "ta" else msg}
+
         cat_ids.append(str(cat["_id"]))
 
-    # Photos → base64 encoding
-    photos_b64 = []
-    if photos:
-        for f in photos:
-            photos_b64.append(base64.b64encode(f.file.read()).decode())
-
-    # Insert shop
+    # ---------- INSERT SHOP ----------
     inserted = col_shop.insert_one({
         "shop_name": shop_name,
         "description": description,
@@ -221,42 +339,99 @@ def add_shop(
         "phone_number": phone_number,
         "email": email,
         "landmark": landmark,
+
         "category": cat_ids,
-        "city_id": str(city_id),
-        "photos": photos_b64,
-        "keywords": [k.strip() for k in keywords.split(",")],
+        "city_id": str(city_oid),
+
+        "media": [],
+        "main_image": None,
+        "keywords": [k.strip() for k in keywords.split(",") if k.strip()],
+
         "user_id": u_oid,
         "created_at": datetime.utcnow(),
         "status": "pending"
     })
 
-    pending_id = str(inserted.inserted_id)
+    shop_id = str(inserted.inserted_id)
 
-    # Admin email notify
-    admin_email = "sakthibala2705@gmail.com"
-    subject = "New Shop Approval Request"
+    update_data = {}
 
-    approve_link = f"http://127.0.0.1:8000/admin?shop_id={pending_id}"
+    # ---------- SAVE MAIN IMAGE ----------
+    if main_image:
+        main_dir = os.path.join(MEDIA_BASE, shop_id, "main")
+        os.makedirs(main_dir, exist_ok=True)
 
-    body = f"""
-    <h2>New Shop Pending Approval</h2>
-    <p><b>Shop Name:</b> {shop_name}</p>
-    <p><b>Owner Email:</b> {email}</p>
-    <p><b>Phone Number:</b> {phone_number}</p>
-    <p>
-        <a href="{approve_link}" style="padding:10px 18px; background:#28a745; color:white; text-decoration:none; border-radius:6px;">
-            APPROVE SHOP
-        </a>
-    </p>
-    """
+        ext = main_image.filename.split(".")[-1]
+        fname = f"{uuid.uuid4()}.{ext}"
+        full_path = os.path.join(main_dir, fname)
 
+        with open(full_path, "wb") as f:
+            f.write(main_image.file.read())
+
+        update_data["main_image"] = f"{MEDIA_BASE}/{shop_id}/main/{fname}"
+
+    # ---------- SAVE MEDIA IMAGES ----------
+    media_items = []
+
+    if media:
+        img_dir = os.path.join(MEDIA_BASE, shop_id, "images")
+        os.makedirs(img_dir, exist_ok=True)
+
+        for f in media:
+            if not f.content_type.startswith("image"):
+                continue
+
+            ext = f.filename.split(".")[-1]
+            fname = f"{uuid.uuid4()}.{ext}"
+            full_path = os.path.join(img_dir, fname)
+
+            with open(full_path, "wb") as img:
+                img.write(f.file.read())
+
+            media_items.append({
+                "type": "image",
+                "path": f"{MEDIA_BASE}/{shop_id}/images/{fname}"
+            })
+
+    if media_items:
+        update_data["media"] = media_items
+
+    # ---------- UPDATE MEDIA DATA ----------
+    if update_data:
+        col_shop.update_one(
+            {"_id": ObjectId(shop_id)},
+            {"$set": update_data}
+        )
+
+    # ---------- ADMIN EMAIL ----------
     try:
-        send_email(admin_email, subject, body)
+        approve_link = f"http://127.0.0.1:8000/admin?shop_id={shop_id}"
+        subject = "New Shop Approval Request"
+
+        body = f"""
+        <h3>New Shop Pending Approval</h3>
+        <p><b>Shop Name:</b> {shop_name}</p>
+        <p><b>Email:</b> {email}</p>
+        <p><b>Phone:</b> {phone_number}</p>
+        <a href="{approve_link}"
+           style="padding:10px 18px;
+           background:#28a745;color:white;
+           text-decoration:none;border-radius:6px;">
+           APPROVE SHOP
+        </a>
+        """
+
+        send_email("sakthibala2705@gmail.com", subject, body)
     except:
         pass
 
-    return {"status": "success", "message": "Shop submitted. Waiting for admin approval."}
-
+    # ---------- RESPONSE ----------
+    msg = "Shop submitted. Waiting for admin approval."
+    return {
+        "status": "success",
+        "shop_id": shop_id,
+        "message": en_to_ta(msg) if lang == "ta" else msg
+    }
 
 
 # UPDATE SHOP
@@ -264,146 +439,230 @@ def add_shop(
 def update_shop(
     user_id: str = Depends(verify_token),
     shop_id: str = "",
+
     shop_name: str = Form(None),
     description: str = Form(None),
     address: str = Form(None),
     phone_number: str = Form(None),
     email: str = Form(None),
     landmark: str = Form(None),
+
     category_list: str = Form(None),
-    city_name: str = Form(None),
-    district: str = Form(None),
-    pincode: str = Form(None),
-    state: str = Form(None),
+    city_id: str = Form(None),
     keywords: str = Form(None),
-    photos: list[UploadFile] = File(None)
+
+    media: list[UploadFile] = File(None),
+    main_image: UploadFile = File(None),
+
+    delete_media: str = Form(None),   # ⭐ NEW
+    lang: str = Query("en")
 ):
+    # ---------- SHOP ID ----------
     try:
         soid = ObjectId(shop_id)
     except:
         return {"status": "error", "message": "Invalid shop id"}
 
+    shop = col_shop.find_one({"_id": soid})
+    if not shop:
+        return {"status": "error", "message": "Shop not found"}
+
     update = {}
 
-    if shop_name: update["shop_name"] = shop_name
-    if description: update["description"] = description
-    if address: update["address"] = address
-    if phone_number: update["phone_number"] = phone_number
-    if email: update["email"] = email
-    if landmark: update["landmark"] = landmark
+    # ---------- BASIC ----------
+    if shop_name:
+        update["shop_name"] = ta_to_en(shop_name) if lang == "ta" else shop_name
+    if description:
+        update["description"] = ta_to_en(description) if lang == "ta" else description
+    if address:
+        update["address"] = ta_to_en(address) if lang == "ta" else address
+    if phone_number:
+        update["phone_number"] = phone_number
+    if email:
+        update["email"] = email
+    if landmark:
+        update["landmark"] = ta_to_en(landmark) if lang == "ta" else landmark
 
-    # Update category list
-    if category_list:
-        new_ids = []
-        for name in category_list.split(","):
-            cat = col_category.find_one({"name": name.strip()})
-            if not cat:
-                return {"status": "error", "message": f"Category '{name}' not found"}
-            new_ids.append(str(cat["_id"]))
-        update["category"] = new_ids
-
-    # Update city
-    if city_name:
-        city_data = {
-            "city_name": city_name,
-            "district": district,
-            "pincode": pincode,
-            "state": state
-        }
-        existing_city = col_city.find_one(city_data)
-        city_id = existing_city["_id"] if existing_city else col_city.insert_one(city_data).inserted_id
-        update["city_id"] = str(city_id)
-
-    # Update keywords
+    # ---------- KEYWORDS ----------
     if keywords:
-        update["keywords"] = [k.strip() for k in keywords.split(",") if k.strip()]
+        k = ta_to_en(keywords) if lang == "ta" else keywords
+        update["keywords"] = [i.strip() for i in k.split(",") if i.strip()]
 
-    # Update photos
-    if photos:
-        old_photos = col_shop.find_one({"_id": soid}).get("photos", [])
-        new_photos = [base64.b64encode(f.file.read()).decode() for f in photos]
-        update["photos"] = old_photos + new_photos
+    # ---------- MAIN IMAGE ----------
+    if main_image:
+        img_dir = os.path.join(MEDIA_BASE, shop_id, "main")
+        os.makedirs(img_dir, exist_ok=True)
 
-    col_shop.update_one({"_id": soid}, {"$set": update})
+        # delete old main image file
+        old = shop.get("main_image")
+        if old:
+            try:
+                os.remove(old)
+            except:
+                pass
+
+        ext = main_image.filename.split(".")[-1]
+        fname = f"{uuid.uuid4()}.{ext}"
+        full_path = os.path.join(img_dir, fname)
+        db_path = f"{MEDIA_BASE}/{shop_id}/main/{fname}"
+
+        with open(full_path, "wb") as f:
+            f.write(main_image.file.read())
+
+        update["main_image"] = db_path
+
+    # ---------- DELETE MEDIA ----------
+    if delete_media:
+        delete_paths = [p.strip() for p in delete_media.split(",") if p.strip()]
+        remaining = []
+
+        for m in shop.get("media", []):
+            if m["path"] in delete_paths:
+                try:
+                    os.remove(m["path"])
+                except:
+                    pass
+            else:
+                remaining.append(m)
+
+        update["media"] = remaining
+
+    # ---------- ADD MEDIA ----------
+    if media:
+        img_dir = os.path.join(MEDIA_BASE, shop_id, "images")
+        vid_dir = os.path.join(MEDIA_BASE, shop_id, "videos")
+        os.makedirs(img_dir, exist_ok=True)
+        os.makedirs(vid_dir, exist_ok=True)
+
+        current = update.get("media", shop.get("media", []))
+
+        for f in media:
+            ext = f.filename.split(".")[-1]
+            fname = f"{uuid.uuid4()}.{ext}"
+
+            if f.content_type.startswith("image"):
+                full = os.path.join(img_dir, fname)
+                dbp = f"{MEDIA_BASE}/{shop_id}/images/{fname}"
+                typ = "image"
+
+            elif f.content_type.startswith("video"):
+                full = os.path.join(vid_dir, fname)
+                dbp = f"{MEDIA_BASE}/{shop_id}/videos/{fname}"
+                typ = "video"
+            else:
+                continue
+
+            with open(full, "wb") as file:
+                file.write(f.file.read())
+
+            current.append({"type": typ, "path": dbp})
+
+        update["media"] = current
+
+    # ---------- UPDATE ----------
+    if update:
+        col_shop.update_one({"_id": soid}, {"$set": update})
+
     return {"status": "success", "message": "Shop updated successfully"}
 
 # DELETE SHOP
 @router.delete("/shop/delete/{shop_id}/", operation_id="deleteShop")
-def delete_shop(shop_id: str, user_id: str = Depends(verify_token)):
+def delete_shop(shop_id: str, user_id: str = Depends(verify_token), lang: str = Query("en")):
     try:
-        soid = ObjectId(shop_id)
+        res = col_shop.delete_one({"_id": ObjectId(shop_id)})
+        if res.deleted_count == 0: return {"status": "error", "message": "Shop not found"}
+        msg = "Shop deleted successfully"
+        return {"status": "success", "message": translate_to_ta_logic(msg) if lang == "ta" else msg}
     except:
-        return {"status": "error", "message": "Invalid shop id"}
-
-    res = col_shop.delete_one({"_id": soid})
-
-    if res.deleted_count == 0:
-        return {"status": "error", "message": "Shop not found"}
-
-    return {"status": "success", "message": "Shop deleted successfully"}
+        return {"status": "error", "message": "Invalid ID"}
 
 
-# MY SHOPS
-@router.get("/myshop/", operation_id="getUserShops")
-def get_user_shops(user_id: str = Depends(verify_token)):
+# GET MY SHOP
+@router.get("/myshop/", operation_id="getMyShop")
+def get_my_shop(
+    user_id: str = Depends(verify_token),
+    lang: str = Query("en")
+):
+    # ---------- USER ----------
     try:
-        uid = ObjectId(user_id)
+        u_oid = ObjectId(user_id)
     except:
-        return {"status": "error", "message": "Invalid user ID"}
+        return {"status": "error", "message": "Invalid user id"}
 
-    shops = list(col_shop.find({"user_id": uid}))
+    shops = list(col_shop.find({"user_id": u_oid}))
     final = []
 
     for s in shops:
-        s_clean = {k: oid(v) for k, v in s.items()}
+        # ---------- SHOP ----------
+        s_clean = safe(s)
 
-        # Categories
+        # ---------- CATEGORIES ----------
         categories = []
         for cid in s.get("category", []):
-            cat = col_category.find_one({"_id": ObjectId(cid)})
-            if cat:
-                categories.append({k: oid(v) for k, v in cat.items()})
+            try:
+                cat = col_category.find_one({"_id": ObjectId(cid)})
+                if cat:
+                    categories.append(safe(cat))
+            except:
+                continue
 
-        # City
+        # ---------- CITY ----------
         city_doc = None
         if s.get("city_id"):
-            c = col_city.find_one({"_id": ObjectId(s["city_id"])})
-            if c:
-                city_doc = {k: oid(v) for k, v in c.items()}
+            try:
+                city = col_city.find_one({"_id": ObjectId(s["city_id"])})
+                if city:
+                    city_doc = safe(city)
+            except:
+                pass
 
-        # Offers
-        offers_b64, offer_types, offer_ids = [], [], []
-        offer_docs = list(col_offers.find({"shop_id": s_clean["_id"]}))
+        # ---------- OFFERS ----------
+        offers = []
+        for doc in col_offers.find({"shop_id": s_clean["_id"]}, {"_id": 0}):
+            for o in doc.get("offers", []):
+                offers.append(safe({
+                    "offer_id": o.get("offer_id"),
+                    "title": o.get("title"),
+                    "fee": o.get("fee"),
+                    "start_date": o.get("start_date"),
+                    "end_date": o.get("end_date"),
+                    "percentage": o.get("percentage"),
+                    "description": o.get("description"),
+                    "media_type": o.get("media_type"),
+                    "media_path": o.get("media_path"),
+                    "status": o.get("status"),
+                    "uploaded_at": o.get("uploaded_at")
+                }))
 
-        for od in offer_docs:
-            top = od.get("file_b64") or od.get("file_base64")
-            if top:
-                offers_b64.append(top)
-                offer_types.append(od.get("file_type", "image"))
-                offer_ids.append(oid(od["_id"]))
-
-            nested = od.get("offers", [])
-            for o in nested:
-                fb = o.get("file_base64") or o.get("file_b64")
-                if fb:
-                    offers_b64.append(fb)
-                    offer_types.append(o.get("file_type", "image"))
-                    offer_ids.append(o.get("offer_id") or oid(od["_id"]))
-
+        # ---------- FINAL STRUCTURE ----------
         final.append({
-            "shop": s_clean,
+            "shop": {
+                **s_clean,
+                "main_image": s_clean.get("main_image"),
+                "media": s_clean.get("media", [])
+            },
             "categories": categories,
             "city": city_doc,
-            "offers": offers_b64,
-            "offer_types": offer_types,
-            "offer_ids": offer_ids
+            "offers": offers
         })
 
-    return {"status": "success","message": "shop get successfully", "data": final}
+    clean_data = safe(final)
+    translated = translate_response_data(clean_data, lang)
+
+    return {
+        "status": "success",
+        "message": translate_to_ta_logic("shop get successfully")
+            if lang == "ta" else "shop get successfully",
+        "data": translated
+    }
+
 # ADD OFFER
+
 @router.post("/offer/add/", operation_id="addOffer")
 async def add_offer_api(
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(verify_token),
+
     target_shop_id: str = Form(...),
     title: str = Form(""),
     fee: str = Form(""),
@@ -411,191 +670,495 @@ async def add_offer_api(
     end_date: str = Form(""),
     percentage: str = Form(""),
     description: str = Form(""),
-    file: UploadFile = File(...)
+
+    file: UploadFile = File(...),
+    lang: str = Query("en")
 ):
-    try:
-        u_oid = ObjectId(user_id)
-    except:
-        return {"status": False, "message": "Invalid user ID"}
+    # ---------- TRANSLATE ----------
+    if lang == "ta":
+        title = translate_to_en_logic(title)
+        description = translate_to_en_logic(description)
 
-    # If ALL add offer to every shop
-    if target_shop_id == "ALL":
-        shops = list(col_shop.find({"user_id": u_oid}))
-        if not shops:
-            return {"status": False, "message": "No shops found"}
-        shop_ids = [str(s["_id"]) for s in shops]
+    u_oid = ObjectId(user_id)
+
+    # ---------- SHOP IDS ----------
+    shop_ids = (
+        [str(s["_id"]) for s in col_shop.find({"user_id": u_oid}, {"_id": 1})]
+        if target_shop_id == "ALL"
+        else [target_shop_id]
+    )
+
+    if not shop_ids:
+        return {"status": False, "message": "No shops found"}
+
+    # ---------- FILE TYPE ----------
+    if file.content_type.startswith("image"):
+        media_type = "image"
+        folder = "images"
+    elif file.content_type.startswith("video"):
+        media_type = "video"
+        folder = "videos"
     else:
-        shop_ids = [target_shop_id]
+        return {"status": False, "message": "Invalid file type"}
 
-    # Read file
-    file_bytes = file.file.read()
-    if not file_bytes:
-        return {"status": False, "message": "Empty file"}
+    # ---------- OFFER ID ----------
+    offer_id = str(ObjectId())
 
-    file_b64 = base64.b64encode(file_bytes).decode()
-    ftype = "video" if file.content_type.lower().startswith("video") else "image"
+    # ---------- SAVE FILE FOR EACH SHOP ----------
+    for shop_id in shop_ids:
+        save_dir = os.path.join(MEDIA_BASE, shop_id, "offers", folder)
+        os.makedirs(save_dir, exist_ok=True)
 
-    offer_obj = {
-        "offer_id": str(ObjectId()),
-        "file_base64": file_b64,
-        "file_type": ftype,
-        "filename": file.filename,
-        "uploaded_at": datetime.utcnow(),
-        "status": "pending",
-        "title": title,
-        "fee": fee,
-        "start_date": start_date,
-        "end_date": end_date,
-        "percentage": percentage,
-        "description": description
-    }
+        ext = file.filename.split(".")[-1]
+        filename = f"{offer_id}.{ext}"
+        full_path = os.path.join(save_dir, filename)
 
-    # Save offer to DB
-    for sid in shop_ids:
-        exist = col_offers.find_one({"shop_id": sid})
-        if exist:
+        with open(full_path, "wb") as f:
+            f.write(await file.read())
+
+        media_path = f"{MEDIA_BASE}/{shop_id}/offers/{folder}/{filename}"
+
+        offer_obj = {
+            "offer_id": offer_id,
+            "media_type": media_type,
+            "media_path": media_path,
+            "filename": filename,
+
+            "title": title,
+            "fee": fee,
+            "start_date": start_date,
+            "end_date": end_date,
+            "percentage": percentage,
+            "description": description,
+
+            "uploaded_at": datetime.utcnow(),
+            "status": "pending"
+        }
+
+        if col_offers.find_one({"shop_id": shop_id}, {"_id": 1}):
             col_offers.update_one(
-                {"shop_id": sid},
+                {"shop_id": shop_id},
                 {"$push": {"offers": offer_obj}}
             )
         else:
             col_offers.insert_one({
-                "shop_id": sid,
+                "shop_id": shop_id,
                 "user_id": user_id,
                 "offers": [offer_obj],
                 "status": "pending",
-                "approved_at": None,
                 "created_at": datetime.utcnow()
             })
 
-    # Email notify
-    try:
-        user = col_user.find_one({"_id": u_oid})
-        user_email = user.get("email", "Not Provided")
-        user_phone = user.get("phonenumber", "Not Provided")
+    # ---------- EMAIL (BACKGROUND) ----------
+    background_tasks.add_task(
+        send_email,
+        "sakthibala2705@gmail.com",
+        "New Offer",
+        f"New offer '{title}' added."
+    )
 
-        shop_names = []
-        for sid in shop_ids:
-            shop_doc = col_shop.find_one({"_id": ObjectId(sid)})
-            if shop_doc:
-                shop_names.append(shop_doc.get("shop_name", "Unknown Shop"))
-
-        shop_list_str = ", ".join(shop_names)
-
-        admin_email = "sakthibala2705@gmail.com"
-        subject = "New Offer Added – Approval Required"
-
-        body = f"""
-        <h2>New Offer Submitted</h2>
-
-        <p><b>Submitted By:</b> {user_email} ({user_phone})</p>
-        <p><b>Target Shops:</b> {shop_list_str}</p>
-
-        <h3>Offer Details</h3>
-        <ul>
-            <li><b>Title:</b> {title}</li>
-            <li><b>Fee:</b> {fee}</li>
-            <li><b>Percentage:</b> {percentage}</li>
-            <li><b>Start Date:</b> {start_date}</li>
-            <li><b>End Date:</b> {end_date}</li>
-            <li><b>Description:</b> {description}</li>
-        </ul>
-
-        <p><b>Status:</b> Pending Approval</p>
-        """
-
-        send_email(admin_email, subject, body)
-
-    except Exception as e:
-        print("MAIL ERROR:", e)
-
-    return {"status": True, "message": "Offer added successfully"}
-
+    return {
+        "status": True,
+        "message": translate_to_ta_logic("Offer added successfully")
+        if lang == "ta" else "Offer added successfully"
+    }
 
 # UPDATE OFFER
 @router.post("/offer/update/", operation_id="updateOffer")
 async def update_offer_api(
     user_id: str = Depends(verify_token),
+
     offer_id: str = Form(...),
     shop_id: str = Form(...),
+
     title: str = Form(""),
     fee: str = Form(""),
     start_date: str = Form(""),
     end_date: str = Form(""),
     percentage: str = Form(""),
     description: str = Form(""),
-    file: UploadFile = File(None)
+
+    file: UploadFile = File(None),
+    lang: str = Query("en")
 ):
-    offer_doc = col_offers.find_one({"shop_id": shop_id})
-    if not offer_doc:
-        return {"status": False, "message": "No offers found for this shop"}
+    # ---------- TRANSLATE ----------
+    if lang == "ta":
+        title = translate_to_en_logic(title)
+        description = translate_to_en_logic(description)
 
-    offers = offer_doc.get("offers", [])
-    target_offer = None
-
-    for o in offers:
-        if o["offer_id"] == offer_id:
-            target_offer = o
-            break
-
-    if not target_offer:
+    # ---------- FIND OFFER ----------
+    doc = col_offers.find_one({"shop_id": shop_id})
+    if not doc:
         return {"status": False, "message": "Offer not found"}
 
-    # Update fields
-    target_offer["title"] = title
-    target_offer["fee"] = fee
-    target_offer["start_date"] = start_date
-    target_offer["end_date"] = end_date
-    target_offer["percentage"] = percentage
-    target_offer["description"] = description
+    offers = doc.get("offers", [])
+    target = next((o for o in offers if o["offer_id"] == offer_id), None)
 
-    # Update file
+    if not target:
+        return {"status": False, "message": "Offer not found"}
+
+    # ---------- UPDATE TEXT FIELDS ----------
+    target.update({
+        "title": title,
+        "fee": fee,
+        "start_date": start_date,
+        "end_date": end_date,
+        "percentage": percentage,
+        "description": description
+    })
+
+    # ---------- FILE UPDATE (OPTIONAL) ----------
     if file:
-        file_bytes = file.file.read()
-        if not file_bytes:
-            return {"status": False, "message": "Empty file"}
+        # 🔥 delete old file
+        old_path = target.get("media_path")
+        if old_path and os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+            except:
+                pass
 
-        file_b64 = base64.b64encode(file_bytes).decode()
-        ftype = "video" if file.content_type.lower().startswith("video") else "image"
+        # detect type
+        if file.content_type.startswith("image"):
+            folder = "images"
+            media_type = "image"
+        elif file.content_type.startswith("video"):
+            folder = "videos"
+            media_type = "video"
+        else:
+            return {"status": False, "message": "Invalid file type"}
 
-        target_offer["file_base64"] = file_b64
-        target_offer["file_type"] = ftype
-        target_offer["filename"] = file.filename
-        target_offer["uploaded_at"] = datetime.utcnow()
+        # save new file
+        ext = file.filename.split(".")[-1]
+        filename = f"{offer_id}.{ext}"
+        save_dir = os.path.join(MEDIA_BASE, shop_id, "offers", folder)
+        os.makedirs(save_dir, exist_ok=True)
 
-    # Save updated array
+        full_path = os.path.join(save_dir, filename)
+        with open(full_path, "wb") as f:
+            f.write(await file.read())
+
+        target.update({
+            "media_type": media_type,
+            "media_path": f"{MEDIA_BASE}/{shop_id}/offers/{folder}/{filename}",
+            "filename": filename,
+            "uploaded_at": datetime.utcnow()
+        })
+
+    # ---------- SAVE ----------
     col_offers.update_one(
         {"shop_id": shop_id},
         {"$set": {"offers": offers}}
     )
 
-    return {"status": True, "message": "Offer updated successfully"}
-
-
+    return {
+        "status": True,
+        "message": translate_to_ta_logic("Offer updated successfully")
+        if lang == "ta" else "Offer updated successfully"
+    }
 
 
 # DELETE OFFER
 @router.delete("/delete/offer/", operation_id="deleteOffer")
-def delete_offer(
-    user_id: str = Depends(verify_token),
-    offer_id: str = Query(...)
-):
-    # Try deleting whole document first
+def delete_offer(user_id: str = Depends(verify_token), offer_id: str = Query(...), lang: str = Query("en")):
     try:
-        obj_id = ObjectId(offer_id)
-        res = col_offers.delete_one({"_id": obj_id})
-        if res.deleted_count > 0:
-            return {"status": "success", "message": "Offer document removed"}
+        if col_offers.delete_one({"_id": ObjectId(offer_id)}).deleted_count > 0:
+            return {"status": "success",
+                    "message": translate_to_ta_logic("Offer removed") if lang == "ta" else "Offer removed"}
     except:
         pass
-
-    # Try removing nested offer
-    doc = col_offers.find_one({"offers.offer_id": offer_id})
+    doc = col_offers.find_one({"offers.offer_id": offer_id}, {"_id": 1})
     if doc:
-        col_offers.update_one(
-            {"_id": doc["_id"]},
-            {"$pull": {"offers": {"offer_id": offer_id}}}
-        )
-        return {"status": "success", "message": "Offer removed"}
-
+        col_offers.update_one({"_id": doc["_id"]}, {"$pull": {"offers": {"offer_id": offer_id}}})
+        return {"status": "success",
+                "message": translate_to_ta_logic("Offer removed") if lang == "ta" else "Offer removed"}
     return {"status": "error", "message": "Offer not found"}
+
+
+
+
+
+
+# JOB COLLECTION
+# ===============================
+# ===============================
+# ===============================
+# JOB & NOTIFICATION COLLECTIONS
+# ===============================
+col_jobs = db["jobs"]
+col_notifications = db["notifications"]
+
+# ADD JOB
+@router.post("/job/add/", operation_id="addJob")
+def add_job(
+    user_id: str = Depends(verify_token),
+    job_title: str = Form(...),
+    job_description: str = Form(...),
+    salary: int = Form(...),
+    shop_name: str = Form(...),
+
+    # --- CONTACT FIELDS ---
+    phone_number: str = Form(...),
+    email: str = Form(...),
+    address: str = Form(...),
+
+    # --- NEW TIME FIELDS ---
+    work_start_time: str = Form(...),
+    work_end_time: str = Form(...),
+    # -----------------------
+
+    city_id: str = Form(...),
+    lang: str = Query("en")
+):
+    # 1. Validate City
+    try:
+        city_oid = ObjectId(city_id)
+        city = col_city.find_one({"_id": city_oid})
+        if not city:
+            raise HTTPException(status_code=404, detail="City not found")
+    except:
+        raise HTTPException(status_code=400, detail="Invalid city id")
+
+    # 2. Validate User ID
+    try:
+        u_oid = ObjectId(user_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid user id")
+
+    # 3. Translate
+    if lang == "ta":
+        job_title = translate_to_en_logic(job_title)
+        job_description = translate_to_en_logic(job_description)
+        shop_name = translate_to_en_logic(shop_name)
+        address = translate_to_en_logic(address)
+        work_start_time = translate_to_en_logic(work_start_time)
+        work_end_time = translate_to_en_logic(work_end_time)
+
+    # 4. Insert Job
+    job_insert = col_jobs.insert_one({
+        "user_id": u_oid,
+        "job_title": job_title,
+        "job_description": job_description,
+        "salary": salary,
+        "shop_name": shop_name,
+
+        "phone_number": phone_number,
+        "email": email,
+        "address": address,
+
+        "work_start_time": work_start_time,
+        "work_end_time": work_end_time,
+
+        "city_id": city_oid,
+        "city_name": translate_to_en_logic(city.get("city_name")),
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    })
+
+    # 5. SEND NOTIFICATION (To Same User)
+    col_notifications.insert_one({
+        "user_id": u_oid,
+        "type": "job_created",
+        "title": "Job Posted Successfully",
+        "message": f"Your job '{job_title}' has been posted and is now live.",
+        "related_id": str(job_insert.inserted_id),
+        "is_read": False,
+        "created_at": datetime.utcnow()
+    })
+
+    msg = "Job added successfully"
+    return {
+        "status": True,
+        "message": translate_to_ta_logic(msg) if lang == "ta" else msg
+    }
+
+
+# UPDATE JOB
+@router.post("/job/update/{job_id}/", operation_id="updateJob")
+def update_job(
+    job_id: str,
+    user_id: str = Depends(verify_token),
+    job_title: str = Form(None),
+    job_description: str = Form(None),
+    salary: int = Form(None),
+    shop_name: str = Form(None),
+
+    phone_number: str = Form(None),
+    email: str = Form(None),
+    address: str = Form(None),
+
+    # --- NEW TIME FIELDS (Optional) ---
+    work_start_time: str = Form(None),
+    work_end_time: str = Form(None),
+    # ----------------------------------
+
+    city_id: str = Form(None),
+    lang: str = Query("en")
+):
+    try:
+        j_oid = ObjectId(job_id)
+        u_oid = ObjectId(user_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
+    job = col_jobs.find_one({"_id": j_oid, "user_id": u_oid})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found or access denied")
+
+    update = {}
+
+    if job_title:
+        update["job_title"] = translate_to_en_logic(job_title) if lang == "ta" else job_title
+    if job_description:
+        update["job_description"] = translate_to_en_logic(job_description) if lang == "ta" else job_description
+    if salary is not None:
+        update["salary"] = salary
+    if shop_name:
+        update["shop_name"] = translate_to_en_logic(shop_name) if lang == "ta" else shop_name
+
+    if phone_number:
+        update["phone_number"] = phone_number
+    if email:
+        update["email"] = email
+    if address:
+        update["address"] = translate_to_en_logic(address) if lang == "ta" else address
+
+    # Update Time
+    if work_start_time:
+        update["work_start_time"] = translate_to_en_logic(work_start_time) if lang == "ta" else work_start_time
+    if work_end_time:
+        update["work_end_time"] = translate_to_en_logic(work_end_time) if lang == "ta" else work_end_time
+
+    if city_id:
+        try:
+            city_oid = ObjectId(city_id)
+            city = col_city.find_one({"_id": city_oid})
+            if city:
+                update["city_id"] = city_oid
+                update["city_name"] = translate_to_en_logic(city.get("city_name"))
+        except:
+            pass
+
+    update["updated_at"] = datetime.utcnow()
+
+    col_jobs.update_one({"_id": j_oid}, {"$set": update})
+
+    msg = "Job updated successfully"
+    return {
+        "status": True,
+        "message": translate_to_ta_logic(msg) if lang == "ta" else msg
+    }
+
+
+# DELETE JOB
+@router.delete("/job/delete/{job_id}/", operation_id="deleteJob")
+def delete_job(
+    job_id: str,
+    user_id: str = Depends(verify_token),
+    lang: str = Query("en")
+):
+    try:
+        j_oid = ObjectId(job_id)
+        u_oid = ObjectId(user_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
+    res = col_jobs.delete_one({"_id": j_oid, "user_id": u_oid})
+
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Job not found or access denied")
+
+    msg = "Job deleted successfully"
+    return {
+        "status": True,
+        "message": translate_to_ta_logic(msg) if lang == "ta" else msg
+    }
+
+
+# GET MY JOBS
+@router.get("/my/jobs/", operation_id="getMyJobs")
+def get_my_jobs(
+    user_id: str = Depends(verify_token),
+    lang: str = Query("en")
+):
+    try:
+        u_oid = ObjectId(user_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid user id")
+
+    jobs = list(col_jobs.find({"user_id": u_oid}).sort("created_at", -1))
+
+    results = []
+    for j in jobs:
+        job_clean = safe(j)
+
+        job_data = {
+            "_id": job_clean["_id"],
+            "job_title": job_clean.get("job_title", ""),
+            "job_description": job_clean.get("job_description", ""),
+            "salary": job_clean.get("salary", ""),
+            "shop_name": job_clean.get("shop_name", ""),
+
+            "phone_number": job_clean.get("phone_number", ""),
+            "email": job_clean.get("email", ""),
+            "address": job_clean.get("address", ""),
+
+            # Return new fields
+            "work_start_time": job_clean.get("work_start_time", ""),
+            "work_end_time": job_clean.get("work_end_time", ""),
+
+            "city_id": job_clean.get("city_id"),
+            "city_name": job_clean.get("city_name", ""),
+            "created_at": job_clean.get("created_at"),
+            "updated_at": job_clean.get("updated_at")
+        }
+        results.append(job_data)
+
+    translated = translate_response_data(results, lang)
+
+    msg = "Jobs fetched successfully"
+    return {
+        "status": True,
+        "message": translate_to_ta_logic(msg) if lang == "ta" else msg,
+        "data": translated
+    }
+
+
+# GET NOTIFICATIONS
+@router.get("/notifications/", operation_id="getNotifications")
+def get_notifications(
+    user_id: str = Depends(verify_token),
+    lang: str = Query("en")
+):
+    try:
+        u_oid = ObjectId(user_id)
+    except:
+        return {"status": False, "message": "Invalid user"}
+
+    notifs = list(col_notifications.find({"user_id": u_oid}).sort("created_at", -1).limit(20))
+
+    data = safe(notifs)
+    translated = translate_response_data(data, lang)
+
+    return {"status": True, "data": translated}
+
+
+# DELETE NOTIFICATION
+@router.delete("/notification/delete/{notif_id}/", operation_id="deleteNotification")
+def delete_notification(
+        notif_id: str,
+        user_id: str = Depends(verify_token),
+        lang: str = Query("en")
+):
+    try:
+        # Delete specific notification belonging to the user
+        res = col_notifications.delete_one({
+            "_id": ObjectId(notif_id),
+            "user_id": ObjectId(user_id)
+        })
+
+        if res.deleted_count > 0:
+            return {"status": True, "message": "Deleted successfully"}
+        else:
+            return {"status": False, "message": "Notification not found"}
+    except:
+        return {"status": False, "message": "Invalid ID"}
