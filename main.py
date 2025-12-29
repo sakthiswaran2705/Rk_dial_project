@@ -8,6 +8,7 @@ from api.searched_detail_showhome import router as searched_detail_router
 from api.offers_city import router as slideshow_router
 from api.offers_list import router as offer_router
 from api.offers_for_particular_shop import router as particular_offer_router
+from api.jobs_get import router as jobs_router
 app = FastAPI(
     title="RK-DIAL API",
     description="API endpoints for RK-Dial Application",
@@ -31,6 +32,8 @@ app.include_router(searched_detail_router)
 app.include_router(slideshow_router)
 app.include_router(offer_router)
 app.include_router(particular_offer_router)
+app.include_router(jobs_router)
+
 # Root
 @app.get("/")
 def root():
