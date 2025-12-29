@@ -1,49 +1,65 @@
 from fastapi import APIRouter
 from bson import ObjectId
-from api.common_db_url import db
+from common_urldb import db
 
 router = APIRouter()
 
-col_offers = db["offers"]   
+col_offers = db["offers"]
 
-@router.get("/offers/shop/{shop_id}/", summary="Get offers for a shop")
+
+@router.get(
+    "/offers/shop/{shop_id}/",
+    operation_id="getOffersForShop",
+    summary="Get approved offers for a shop (image & video supported)"
+)
 def get_offers_for_shop(shop_id: str):
 
+    # ---------- TRY OBJECT ID ----------
     try:
-        oid = ObjectId(shop_id)
+        shop_oid = ObjectId(shop_id)
     except:
-        oid = None
+        shop_oid = None
 
-    # Match both ObjectId or string
+
     offers_doc = col_offers.find_one({
         "$or": [
             {"shop_id": shop_id},
-            {"shop_id": oid}
+            {"shop_id": shop_oid}
         ]
     })
 
-    # No offers for this shop
     if not offers_doc:
-        return {"status": True, "offers": []}
+        return {
+            "status": True,
+            "offers": []
+        }
 
-    offers_list = []
+    approved_offers = []
 
+    
     for offer in offers_doc.get("offers", []):
-        offers_list.append({
-            "offer_id": offer.get("offer_id"),
+
+        if offer.get("status") != "approved":
+            continue
+
+        approved_offers.append({
+            "offer_id": str(offer.get("offer_id")),
             "title": offer.get("title"),
-            "percentage": offer.get("percentage"),
-            "file_type": offer.get("file_type"),
-            "file_base64": offer.get("file_base64"),
-            "filename": offer.get("filename"),
             "description": offer.get("description"),
+            "percentage": offer.get("percentage"),
+            "fee": offer.get("fee"),
+
+      
+            "media_type": offer.get("media_type"),     # image | video
+            "media_path": offer.get("media_path"),     # media/....
+
+            "filename": offer.get("filename"),
             "start_date": offer.get("start_date"),
             "end_date": offer.get("end_date"),
-            "fee": offer.get("fee")
-
+            "status": offer.get("status")
         })
 
     return {
         "status": True,
-        "offers": offers_list
+        "offers": approved_offers
     }
