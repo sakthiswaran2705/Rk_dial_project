@@ -3,7 +3,7 @@ import plansData from "./plans.json"; // Import the separated JSON
 
 /* ================= LANGUAGE ================= */
 const LANG = localStorage.getItem("LANG") || "en";
-
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 /* ================= TRANSLATION MAP ================= */
 const TXT = {
   title: {
@@ -97,7 +97,7 @@ export default function Plan() {
     };
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/payment/save/", {
+      const res = await fetch(`${BACKEND_URL}/payment/save/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
