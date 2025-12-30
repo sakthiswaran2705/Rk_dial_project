@@ -134,17 +134,20 @@ function ShopDetails() {
   // 1. LOAD SHOP MEDIA
   useEffect(() => {
     if (!shopId) return;
-    fetch(`http://127.0.0.1:8000/shop/${shopId}/media/`)
+    
+    fetch(`${BACKEND_URL}/shop/${shopId}/media/`)
       .then((res) => res.json())
       .then((json) => {
         if (json.status && json.media) {
           const formattedMedia = json.media.map((item) => ({
             type: item.type,
-            url: `http://127.0.0.1:8000/${item.path}`
+            url: `${BACKEND_URL}/${item?.path}`
           }));
           setMediaList(formattedMedia);
           if (json.main_image) {
-             const mainUrl = `http://127.0.0.1:8000/${json.main_image}`;
+            const mainUrl = json?.main_image
+              ? `${BACKEND_URL}/${json.main_image}`
+              : "";
              const found = formattedMedia.find(m => m.url === mainUrl);
              setMainMedia(found || { type: 'image', url: mainUrl });
           } else {
@@ -158,7 +161,7 @@ function ShopDetails() {
   // 2. LOAD REVIEWS
   useEffect(() => {
     if (!shopId) return;
-    fetch(`http://127.0.0.1:8000/shop/${shopId}/reviews/`)
+    fetch(`${BACKEND_URL}/shop/${shopId}/reviews/`)
       .then((res) => res.json())
       .then((json) => {
         if (json.status) {
@@ -213,7 +216,7 @@ function ShopDetails() {
     formData.append("rating", rating);
     formData.append("review", reviewText);
 
-    let res = await fetch("http://127.0.0.1:8000/review/add/", {
+    let res = await fetch(`${BACKEND_URL}/review/add/`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
@@ -226,7 +229,7 @@ function ShopDetails() {
         return navigate("/login");
       }
       token = newToken;
-      res = await fetch("http://127.0.0.1:8000/review/add/", {
+      res = await fetch(`${BACKEND_URL}/review/add/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -253,7 +256,7 @@ function ShopDetails() {
     const formData = new FormData();
     formData.append("review_id", reviewId);
 
-    let res = await fetch("http://127.0.0.1:8000/review/delete/", {
+    let res = await fetch(`${BACKEND_URL}/review/delete/`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
@@ -266,7 +269,7 @@ function ShopDetails() {
         return navigate("/login");
       }
       token = newToken;
-      res = await fetch("http://127.0.0.1:8000/review/delete/", {
+      res = await fetch(`${BACKEND_URL}/review/delete/`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
