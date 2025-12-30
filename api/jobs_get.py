@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Query
 from bson import ObjectId
 from datetime import datetime
-from common_urldb import db
+from api.common_urldb import db
 
-from translator import ta_to_en, en_to_ta
-from cache import get_cached, set_cache
+from api.translator import ta_to_en, en_to_ta
+from api.cache import get_cached, set_cache
 
 router = APIRouter()
 col_jobs = db["jobs"]
