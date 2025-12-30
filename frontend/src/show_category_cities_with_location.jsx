@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import Navbar from "./Navbar.jsx";
 // 👇 ENSURE THIS IMAGE PATH IS CORRECT
 import heroBgImage from "./image_cc786f.jpg";
-
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 // ---------------- DEBOUNCE HOOK (Prevents API spamming) ----------------
 const useDebounce = (callback, delay) => {
     const timer = useRef(null);
@@ -119,8 +119,10 @@ function Val() {
             return;
         }
         try {
-            const res = await fetch(`http://127.0.0.1:8000/shop/search/?name=${encodeURIComponent(value)}&lang=${lang}`);
-            const json = await res.json();
+            const res = await fetch(
+              `${BACKEND_URL}/shop/search/?name=${encodeURIComponent(value)}&lang=${lang}`
+            );
+                const json = await res.json();
 
             let list = [];
             const data = json.data || [];
@@ -158,7 +160,9 @@ function Val() {
             return;
         }
         try {
-            const res = await fetch(`http://127.0.0.1:8000/city/search/?city_name=${encodeURIComponent(value)}&lang=${lang}`);
+            const res = awaitfetch(
+              `${BACKEND_URL}/city/search/?city_name=${encodeURIComponent(value)}&lang=${lang}`
+            );
             const json = await res.json();
 
             // Extract city names
@@ -211,7 +215,7 @@ function Val() {
             setIsSlidesLoading(true);
             try {
                 const res = await fetch(
-                    `http://127.0.0.1:8000/offers/${encodeURIComponent(cityInput)}/?lang=${lang}`,
+                    `${BACKEND_URL}/offers/${encodeURIComponent(cityInput)}/?lang=${lang}`,
                     { signal: controller.signal }
                 );
                 const json = await res.json();
@@ -276,7 +280,7 @@ function Val() {
 
     // Helper for Category Icons
     const renderCategoryIcon = (cat) => {
-        if (cat?.category_image) return <img src={`http://127.0.0.1:8000/${cat.category_image}`} alt={cat.name} className="cat-icon-img" />;
+        if (cat?.category_image) return <img src={`${BACKEND_URL}/${cat.category_image}`} alt={cat.name} className="cat-icon-img" />;
         return <div className="cat-icon-placeholder">{cat.name?.[0]?.toUpperCase()}</div>;
     };
 
