@@ -136,7 +136,8 @@ export default function OfferDetails() {
     if (!offer_id) return;
 
     setLoading(true);
-    fetch(`http://127.0.0.1:8000/offer/details/${offer_id}/`)
+    fetch(`${BACKEND_URL}/offer/details/${offer_id}/`)
+
       .then(res => res.json())
       .then(d => {
         setData(d);
@@ -235,13 +236,15 @@ export default function OfferDetails() {
           >
             {off.media_type === "video" ? (
               <video
-                src={`http://127.0.0.1:8000/${off.media_path}`}
+               src={`${import.meta.env.VITE_BACKEND_URL}/${off.media_path}`} />
+
                 muted
                 style={styles.otherMedia}
               />
             ) : (
               <img
-                src={`http://127.0.0.1:8000/${off.media_path}`}
+               src={`${import.meta.env.VITE_BACKEND_URL}/${off.media_path}`} />
+
                 style={styles.otherMedia}
                 alt="offer"
               />
