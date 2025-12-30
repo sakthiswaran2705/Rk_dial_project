@@ -236,19 +236,19 @@ export default function OfferDetails() {
           >
             {off.media_type === "video" ? (
               <video
-               src={`${import.meta.env.VITE_BACKEND_URL}/${off.media_path}`} />
-
+                src={`${import.meta.env.VITE_BACKEND_URL}/${off.media_path}`}
                 muted
+                controls
                 style={styles.otherMedia}
               />
             ) : (
               <img
-               src={`${import.meta.env.VITE_BACKEND_URL}/${off.media_path}`} />
-
+                src={`${import.meta.env.VITE_BACKEND_URL}/${off.media_path}`}
                 style={styles.otherMedia}
                 alt="offer"
               />
             )}
+
             <p style={styles.otherTitle}>{off.title}</p>
             <p style={styles.otherPercentage}>{off.percentage}% OFF</p>
           </div>
