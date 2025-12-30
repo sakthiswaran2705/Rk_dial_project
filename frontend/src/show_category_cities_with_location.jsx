@@ -51,7 +51,7 @@ function Val() {
         // Load Categories for the grid below
         const loadCategories = async () => {
             try {
-                const res = await fetch(`http://127.0.0.1:8000/category/list/?lang=${lang}`);
+                const res = await fetch(`${BACKEND_URL}/category/list/?lang=${lang}`);
                 const json = await res.json();
                 setCategoryList(json.data || []);
             } catch (err) {
