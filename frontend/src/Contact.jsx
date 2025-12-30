@@ -23,12 +23,14 @@ export default function Contact() {
     setStatus("Sending...");
 
     try {
-      // 👇 Inga unga Backend API URL podanum (Example: http://127.0.0.1:8000/contact)
-      // const response = await fetch("http://127.0.0.1:8000/contact", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify(formData),
-      // });
+       const response = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/contact`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        }
+      );
 
       // Simulate success for now
       setTimeout(() => {
