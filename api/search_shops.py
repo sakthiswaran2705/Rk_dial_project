@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Query
 from bson import ObjectId
-from common_urldb import db
+from api.common_urldb import db
 import re
 
-from translator import en_to_ta, ta_to_en
-from cache import get_cached, set_cache
+from api.translator import en_to_ta, ta_to_en
+from api.cache import get_cached, set_cache
 
 router = APIRouter()
 
