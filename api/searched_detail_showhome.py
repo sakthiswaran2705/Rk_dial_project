@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Form, Depends, Query
 from bson import ObjectId
-from common_urldb import db
+from api.common_urldb import db
 from datetime import datetime
 from auth_jwt import verify_token
 
-from translator import en_to_ta, ta_to_en
-from cache import get_cached, set_cache
+from api.translator import en_to_ta, ta_to_en
+from api.cache import get_cached, set_cache
 
 router = APIRouter()
 
