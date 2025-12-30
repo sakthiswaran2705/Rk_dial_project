@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from bson import ObjectId
-from common_urldb import db
+from api.common_urldb import db
 
 router = APIRouter()
 
