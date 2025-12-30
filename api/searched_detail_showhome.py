@@ -2,7 +2,7 @@ from fastapi import APIRouter, Form, Depends, Query
 from bson import ObjectId
 from api.common_urldb import db
 from datetime import datetime
-from auth_jwt import verify_token
+from api.auth_jwt import verify_token
 
 from api.translator import en_to_ta, ta_to_en
 from api.cache import get_cached, set_cache
