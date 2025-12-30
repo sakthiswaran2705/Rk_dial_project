@@ -4,9 +4,9 @@ from datetime import datetime
 import hashlib, base64
 import os, uuid
 from pydantic import BaseModel
-from common_urldb import db
-from email_sender import send_email
-from auth_jwt import (
+from api.common_urldb import db
+from api.email_sender import send_email
+from api.auth_jwt import (
     create_access_token,
     create_refresh_token,
     verify_token,
@@ -14,8 +14,8 @@ from auth_jwt import (
 )
 
 # --- TRANSLATOR SYSTEM HELPERS ---
-from translator import ta_to_en, en_to_ta
-from cache import get_cached, set_cache
+from api.translator import ta_to_en, en_to_ta
+from api.cache import get_cached, set_cache
 
 
 def safe(obj):
