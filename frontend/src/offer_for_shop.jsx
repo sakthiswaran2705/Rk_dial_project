@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
 const LANG = localStorage.getItem("LANG") || "en";
-const BACKEND = "http://127.0.0.1:8000";
+const BACKEND = import.meta.env.VITE_BACKEND_URL;
 
 // ================= TRANSLATION MAP =================
 const TXT = {
