@@ -8,7 +8,6 @@ import Plan from "./plans.jsx";
 import OfferDetails from "./OfferDetails.jsx";
 import OffersList from "./offerlist.jsx";
 import OfferForShop from "./offer_for_shop.jsx";
-import Profile from "./profile.jsx";
 import MyJobs from "./MyJobs";
 import SearchResults from "./SearchResults.jsx";
 import Jobs from "./Jobs";
@@ -36,7 +35,6 @@ function RouterPage() {
       {/* DASHBOARD */}
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/my-jobs" element={<MyJobs />} />
-      <Route path="/profile" element={<Profile />} />
 
       {/* SHOP */}
       <Route path="/shop" element={<ShopDetails />} />
