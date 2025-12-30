@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 const LANG = localStorage.getItem("LANG") || "en";
 
 // ======================================================
