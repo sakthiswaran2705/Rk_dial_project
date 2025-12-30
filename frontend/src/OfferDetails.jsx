@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const LANG = localStorage.getItem("LANG") || "en";
 
@@ -175,9 +176,9 @@ export default function OfferDetails() {
         <div style={styles.mediaSection}>
           {main.media_type === "video" ? (
             <video
-              <img src={`${import.meta.env.VITE_BACKEND_URL}/${off.media_path}`} />
-
+              src={`${import.meta.env.VITE_BACKEND_URL}/${main.media_path}`}
               controls
+              muted
               style={styles.mediaElement}
             />
           ) : (
@@ -187,6 +188,7 @@ export default function OfferDetails() {
               style={styles.mediaElement}
             />
           )}
+
         </div>
 
         <div style={styles.infoSection}>
