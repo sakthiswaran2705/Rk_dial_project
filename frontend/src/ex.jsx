@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Navbar from "./Navbar.jsx";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const TXT = {
   backToResults: { en: "Back to Results", ta: "முடிவுகளுக்கு திரும்ப" },
@@ -29,7 +30,8 @@ async function refreshAccessToken() {
   if (!refresh) return null;
 
   try {
-    const res = await fetch("http://127.0.0.1:8000/refresh/", {
+    const res = await fetch(`${BACKEND_URL}/refresh/`
+, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refresh })
