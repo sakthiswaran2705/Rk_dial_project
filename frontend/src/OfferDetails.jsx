@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
-// ======================================================
-//                  LANGUAGE
-// ======================================================
 const LANG = localStorage.getItem("LANG") || "en";
 
 const TXT = {
@@ -177,13 +174,14 @@ export default function OfferDetails() {
         <div style={styles.mediaSection}>
           {main.media_type === "video" ? (
             <video
-              src={`http://127.0.0.1:8000/${main.media_path}`}
+              <img src={`${import.meta.env.VITE_BACKEND_URL}/${off.media_path}`} />
+
               controls
               style={styles.mediaElement}
             />
           ) : (
             <img
-              src={`http://127.0.0.1:8000/${main.media_path}`}
+              src={`${import.meta.env.VITE_BACKEND_URL}/${main.media_path}`}
               alt="offer"
               style={styles.mediaElement}
             />
