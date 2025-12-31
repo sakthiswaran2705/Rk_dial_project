@@ -160,7 +160,7 @@ function Val() {
             return;
         }
         try {
-            const res = awaitfetch(
+            const res = await fetch(
               `${BACKEND_URL}/city/search/?city_name=${encodeURIComponent(value)}&lang=${lang}`
             );
             const json = await res.json();
@@ -252,7 +252,7 @@ function Val() {
         if (slides.length === 0) return null;
 
         const current = slides[index];
-        const url = `http://127.0.0.1:8000/${current.path}`;
+        const url = `${BACKEND_URL}/${current.path}`;
 
         return (
             <div className="modern-slideshow-container">
