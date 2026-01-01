@@ -11,7 +11,7 @@ from api.offers_city import router as slideshow_router
 from api.offers_list import router as offer_router
 from api.offers_for_particular_shop import router as particular_offer_router
 from api.jobs_get import router as jobs_router
-
+from api.uravugal import router as uravugal_router
 app = FastAPI(
     title="RK-DIAL API",
     description="API endpoints for RK-Dial Application",
@@ -20,7 +20,7 @@ app = FastAPI(
     redoc_url=None
 )
 
-# ✅ MEDIA STATIC FILES
+
 MEDIA_DIR = "media"
 if not os.path.exists(MEDIA_DIR):
     os.makedirs(MEDIA_DIR)
@@ -43,7 +43,7 @@ app.include_router(slideshow_router)
 app.include_router(offer_router)
 app.include_router(particular_offer_router)
 app.include_router(jobs_router)
-
+app.include_router(uravugal_router)
 # Root
 @app.get("/")
 def root():
