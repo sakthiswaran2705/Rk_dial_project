@@ -86,36 +86,33 @@ const UravugalForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-
-    // STRICT VALIDATION: Check if any field is empty string
-    const isAnyFieldEmpty = Object.values(formData).some(val => val.trim() === "");
-
-    if (isAnyFieldEmpty) {
-      setError(curT.error);
-      window.scrollTo(0, 0);
-      return;
-    }
-
     setLoading(true);
-
+    setError('');
+  
+    const data = new FormData();
+    data.append('lang', lang);
+  
+    Object.keys(formData).forEach((key) =>
+      data.append(key, formData[key] || "")
+    );
+  
     try {
-      // Sending as JSON (Usually better for Django Rest Framework)
-      const response = await axios.post('http://127.0.0.1:8000/uravugal/add/', {
-        ...formData,
-        lang: lang
-      });
-
-      if (response.status === 200 || response.data.status === 'success') {
+      const response = await axios.post(
+        `${import.meta.env.VITE_BACKEND_URL}/uravugal/add/`,
+        data
+      );
+  
+      if (response.data.status === 'success') {
         setIsSuccess(true);
       }
     } catch (err) {
-      console.error("Submit Error:", err);
-      setError(curT.serverError);
+      console.error(err);
+      setError('Failed to save. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
 
   // ------------------------------------
   // SUCCESS SCREEN
