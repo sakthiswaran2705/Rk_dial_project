@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Form
 from datetime import datetime
 from api.common_urldb import db
-from translator import en_to_ta
+from api.translator import en_to_ta
 
 router = APIRouter()
 
