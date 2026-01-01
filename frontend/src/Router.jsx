@@ -19,7 +19,7 @@ import Shipping from "./Shipping";
 import Privacy from "./Privacy";
 import Terms from "./Terms";
 import Refund from "./Refund";
-
+import UravugalForm from "./uravugal"
 function RouterPage() {
   return (
     <Routes>
@@ -28,7 +28,7 @@ function RouterPage() {
 
       {/* SEARCH */}
       <Route path="/results" element={<SearchResults />} />
-
+     <Route path="/uravugal" element={<UravugalForm />} />
       {/* AUTH */}
       <Route path="/login" element={<Auth />} />
 
