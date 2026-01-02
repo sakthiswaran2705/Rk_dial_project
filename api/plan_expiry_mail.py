@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from bson import ObjectId
-from common_urldb import db
+from api.common_urldb import db
 import smtplib
 from email.mime.text import MIMEText
 
