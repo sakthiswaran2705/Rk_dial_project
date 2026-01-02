@@ -3,7 +3,7 @@ import plansData from "./plans.json"; // Ensure plans.json exists in the same fo
 
 /* ================= LANGUAGE CONFIG ================= */
 const LANG = localStorage.getItem("LANG") || "en";
-
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 /* ================= TRANSLATION MAP ================= */
 const TXT = {
   title: {
@@ -95,7 +95,7 @@ export default function Plan() {
     try {
       // A. Create Order
       const orderRes = await fetch(
-        "http://127.0.0.1:8000/payment/create-order/",
+        `${BACKEND_URL}/payment/create-order/`,
         {
           method: "POST",
           headers: {
@@ -126,7 +126,7 @@ export default function Plan() {
         handler: async function (response) {
           // Verify Payment
           const verifyRes = await fetch(
-            "http://127.0.0.1:8000/payment/verify/",
+            `${BACKEND_URL}/payment/verify/`,
             {
               method: "POST",
               headers: {
@@ -144,7 +144,8 @@ export default function Plan() {
           }
 
           // Save Success
-          await fetch("http://127.0.0.1:8000/payment/save/", {
+          await fetch(
+            `${BACKEND_URL}/payment/save/`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -167,7 +168,8 @@ export default function Plan() {
         // D. Cancel/Dismiss Handler
         modal: {
           ondismiss: async function () {
-            await fetch("http://127.0.0.1:8000/payment/save/", {
+            await fetch(
+              `${BACKEND_URL}/payment/save/`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -213,7 +215,8 @@ export default function Plan() {
 
     try {
       // A. Create Subscription
-      const res = await fetch("http://127.0.0.1:8000/autopay/create/", {
+      const res = await fetch(
+          `${BACKEND_URL}/autopay/create/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
