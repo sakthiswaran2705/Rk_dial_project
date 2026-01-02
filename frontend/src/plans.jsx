@@ -1,9 +1,9 @@
 import React from "react";
-import plansData from "./plans.json"; // Import the separated JSON
+import plansData from "./plans.json"; // Ensure plans.json exists in the same folder
 
-/* ================= LANGUAGE ================= */
+/* ================= LANGUAGE CONFIG ================= */
 const LANG = localStorage.getItem("LANG") || "en";
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
 /* ================= TRANSLATION MAP ================= */
 const TXT = {
   title: {
@@ -23,6 +23,8 @@ const TXT = {
   chooseSilver: { en: "Choose Silver", ta: "சில்வர் தேர்வு" },
   choosePlatinum: { en: "Choose Platinum", ta: "பிளாட்டினம் தேர்வு" },
   chooseGold: { en: "Choose Gold", ta: "கோல்ட் தேர்வு" },
+
+  autoPay: { en: "Enable AutoPay", ta: "தானியங்கி கட்டணம்" },
 
   includes: { en: "Includes:", ta: "இதில் அடங்கும்:" },
 
@@ -79,47 +81,188 @@ const TXT = {
 
 export default function Plan() {
 
-  // --- PAYMENT LOGIC ---
+  // ==================================================
+  // 1️⃣ HANDLE NORMAL ONE-TIME PAYMENT
+  // ==================================================
   const handlePlanPayment = async (plan) => {
-    // PAYMENT SIMULATION (Gateway pending state)
-    const paymentResult = {
-      payment_id: "pay_" + Date.now(),
-      transaction_id: "txn_" + Math.floor(Math.random() * 1000000),
-      status: "pending",
-      message: "Payment initiated, awaiting confirmation",
-    };
+    const token = localStorage.getItem("ACCESS_TOKEN");
 
-    const payload = {
-      plan_id: plan.id,
-      plan_name: plan.name[LANG],
-      amount: plan.price,
-      ...paymentResult,
-    };
+    if (!token) {
+      alert("Please login to continue payment");
+      return;
+    }
 
     try {
-      const res = await fetch(`${BACKEND_URL}/payment/save/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("ACCESS_TOKEN")}`,
-        },
-        body: JSON.stringify(payload),
-      });
+      // A. Create Order
+      const orderRes = await fetch(
+        "http://127.0.0.1:8000/payment/create-order/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ amount: plan.price }),
+        }
+      );
 
-      const data = await res.json();
+      const orderData = await orderRes.json();
 
-      if (data.payment_status === "pending") {
-        alert("Payment pending. Please wait for confirmation.");
-      } else if (data.payment_status === "success") {
-        alert("Payment successful!");
-      } else {
-        alert("Payment failed.");
+      if (!orderData.status) {
+        alert("Order creation failed");
+        return;
       }
+
+      // B. Razorpay Options
+      const options = {
+        key: orderData.key_id,
+        amount: orderData.amount,
+        currency: "INR",
+        name: "RK Dial",
+        description: plan.name[LANG],
+        order_id: orderData.order_id,
+
+        // C. Success Handler
+        handler: async function (response) {
+          // Verify Payment
+          const verifyRes = await fetch(
+            "http://127.0.0.1:8000/payment/verify/",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify(response),
+            }
+          );
+
+          const verifyData = await verifyRes.json();
+          if (!verifyData.status) {
+            alert("Payment verification failed");
+            return;
+          }
+
+          // Save Success
+          await fetch("http://127.0.0.1:8000/payment/save/", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              order_id: orderData.order_id,
+              payment_id: response.razorpay_payment_id,
+              plan_id: plan.id,
+              plan_name: plan.id, // Using ID as plan name for config consistency
+              amount: plan.price,
+              status: "success",
+              message: "Payment successful",
+            }),
+          });
+
+          alert("🎉 Payment Successful!");
+        },
+
+        // D. Cancel/Dismiss Handler
+        modal: {
+          ondismiss: async function () {
+            await fetch("http://127.0.0.1:8000/payment/save/", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                order_id: orderData.order_id,
+                payment_id: "cancelled",
+
+                plan_id: plan.id,
+                plan_name: plan.id,
+                amount: plan.price,
+                status: "failed",
+                message: "Payment cancelled by user",
+              }),
+            });
+
+            alert("Payment cancelled");
+          },
+        },
+
+        theme: { color: "#000000" },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
     } catch (err) {
       console.error(err);
       alert("Server error");
     }
   };
+
+  // ==================================================
+  // 2️⃣ HANDLE AUTOPAY (SUBSCRIPTION)
+  // ==================================================
+  const handleAutoPay = async (plan) => {
+    const token = localStorage.getItem("ACCESS_TOKEN");
+
+    if (!token) {
+      alert("Please login to enable AutoPay");
+      return;
+    }
+
+    try {
+      // A. Create Subscription
+      const res = await fetch("http://127.0.0.1:8000/autopay/create/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ plan_name: plan.id }),
+      });
+
+      const data = await res.json();
+
+      if (!data.subscription_id) {
+        alert("Failed to initiate AutoPay. Please try again.");
+        return;
+      }
+
+      // B. Razorpay Subscription Options
+      const options = {
+        key: data.key_id,
+        subscription_id: data.subscription_id,
+        name: "RK Dial",
+        description: `AutoPay for ${plan.name[LANG]}`,
+
+        // C. Success Handler
+        handler: function (response) {
+          // No manual verify needed for subscriptions, webhook handles DB update
+          alert("AutoPay setup completed. Your plan will activate shortly.");
+
+          console.log("Subscription Payment ID:", response.razorpay_payment_id);
+          console.log("Subscription ID:", response.razorpay_subscription_id);
+          console.log("Signature:", response.razorpay_signature);
+        },
+
+        modal: {
+          ondismiss: function () {
+            alert("AutoPay setup cancelled.");
+          },
+        },
+        theme: { color: "#000000" },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+
+    } catch (err) {
+      console.error("AutoPay Error:", err);
+      alert("Server error connecting to AutoPay.");
+    }
+  };
+
 
   return (
     <div style={styles.page}>
@@ -164,6 +307,15 @@ export default function Plan() {
               ? styles.startPlatinum
               : styles.startGold;
 
+          // Outlined Style for AutoPay
+          const autoPayBtnStyle = {
+            ...buttonStyle,
+            marginTop: "10px",
+            background: "transparent",
+            border: `2px solid ${plan.id === 'silver' ? '#555' : '#000'}`,
+            color: plan.id === 'silver' ? '#555' : '#000'
+          };
+
           const dividerStyle =
             plan.id === "silver"
               ? styles.dividerSilver
@@ -183,12 +335,20 @@ export default function Plan() {
                 <span style={styles.priceMonth}>{plan.period[LANG]}</span>
               </h1>
 
-              {/* Added onClick Handler here */}
+              {/* 1. Normal Payment Button */}
               <button
                 style={buttonStyle}
                 onClick={() => handlePlanPayment(plan)}
               >
                 {TXT[`choose${plan.badge}`][LANG]}
+              </button>
+
+              {/* 2. AutoPay Button */}
+              <button
+                style={autoPayBtnStyle}
+                onClick={() => handleAutoPay(plan)}
+              >
+                {TXT.autoPay[LANG]}
               </button>
 
               <div style={dividerStyle}></div>
