@@ -6,10 +6,9 @@ import Navbar from "./Navbar";
 // --- CONSTANTS ---
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // 20MB
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+const BACKEND_URL = "http://127.0.0.1:8000";
 
 const mediaUrl = (path) => (path ? `${BACKEND_URL}/${path}` : "");
-
 
 // --- TRANSLATION MAP ---
 const TXT = {
@@ -75,6 +74,9 @@ export default function Dashboard() {
   const [shops, setShops] = useState([]);
   const [errorMsg, setErrorMsg] = useState("");
   const [lang, setLang] = useState(localStorage.getItem("LANG") || "en");
+
+  // Subscription Plan State
+  const [planInfo, setPlanInfo] = useState(null);
 
   // Deletion States
   const [deletingId, setDeletingId] = useState(null);
@@ -144,6 +146,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadShops();
+    fetchPlanStatus(); // Check plan on load
   }, [lang]);
 
   // Clean up object URLs
@@ -171,6 +174,46 @@ export default function Dashboard() {
       console.warn("Load error:", err);
     }
   }
+
+  // --- PLAN API & HELPER ---
+  async function fetchPlanStatus() {
+    try {
+      const res = await authenticatedFetch("/my-plan/", { method: "GET" });
+      const json = await res.json();
+      if (json?.status) setPlanInfo(json);
+    } catch (e) { console.warn("Plan check failed", e); }
+  }
+
+  const checkLimit = (type) => {
+    // 1. If Plan info hasn't loaded yet, block nicely or wait (returning false here)
+    if (!planInfo) return false;
+
+    // 2. Not Subscribed
+    if (!planInfo.subscribed) {
+      if(window.confirm("You need an active subscription. View Plans?")) {
+        navigate("/plan");
+      }
+      return false;
+    }
+
+    // 3. Shop Limit
+    if (type === "shop") {
+      if (planInfo.usage.shops_left <= 0) {
+        alert(`You have reached the shop limit for the ${planInfo.plan} plan.`);
+        return false;
+      }
+    }
+
+    // 4. Offer Limit
+    if (type === "offer") {
+      if (planInfo.usage.offers_left <= 0) {
+        alert(`You have reached the offer limit for the ${planInfo.plan} plan.`);
+        return false;
+      }
+    }
+
+    return true;
+  };
 
   const showError = (msg) => {
     setErrorMsg(msg);
@@ -219,6 +262,10 @@ export default function Dashboard() {
   // --- SHOP FORM HANDLERS ---
 
   const handleAddOpen = () => {
+    // Limit check is handled by the button disabled state,
+    // but we check here again for safety if triggered programmatically
+    if (!checkLimit("shop")) return;
+
     setEditingShop(null); // Flag for Add Mode
     setCitySelected(false);
     setForm({
@@ -391,6 +438,7 @@ export default function Dashboard() {
       if (json?.status === "success") {
         setShowForm(false);
         await loadShops();
+        await fetchPlanStatus(); // Refresh limit counts
       } else {
         showError(json?.message || "Operation failed");
       }
@@ -407,8 +455,10 @@ export default function Dashboard() {
     try {
       const res = await authenticatedFetch(`/shop/delete/${id}/?lang=${lang}`, { method: "DELETE" });
       const json = await res.json();
-      if (json?.status === "success") await loadShops();
-      else showError("Delete failed");
+      if (json?.status === "success") {
+         await loadShops();
+         await fetchPlanStatus(); // Refresh limit counts
+      } else showError("Delete failed");
     } catch (e) { showError("Server Error"); }
     finally { setDeletingId(null); }
   };
@@ -490,6 +540,7 @@ export default function Dashboard() {
         if (isUpdate) setShowUpdateOfferForm(false);
         else setShowOfferForm(false);
         await loadShops();
+        await fetchPlanStatus(); // Refresh limit counts
       } else alert(json?.message || "Failed");
     } catch (e) { alert("Server Error"); }
     finally { setter(false); }
@@ -501,7 +552,8 @@ export default function Dashboard() {
       const res = await authenticatedFetch(`/delete/offer/?offer_id=${id}&lang=${lang}`, { method: "DELETE" });
       const json = await res.json();
       if (json?.status === "success") {
-          loadShops();
+          await loadShops();
+          await fetchPlanStatus();
       }
     } catch (e) { alert("Server Error"); }
   };
@@ -553,12 +605,12 @@ export default function Dashboard() {
 
   const s = {
     //page: { padding: "2rem", backgroundColor: colors.bg, minHeight: "100vh", fontFamily: "'Inter', system-ui, sans-serif,'Noto Sans Tamil'" },
-    header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem", background: colors.card, padding: "1rem 1.5rem", borderRadius: "12px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" },
+    header: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", background: colors.card, padding: "1rem 1.5rem", borderRadius: "12px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" },
     title: { margin: 0, fontSize: "1.5rem", fontWeight: "700", color: "#111827" },
     btnGroup: { display: "flex", gap: "12px" },
-    btn: (color = colors.primary) => ({
-      padding: "0.6rem 1.2rem", backgroundColor: color, color: "white", border: "none", borderRadius: "8px",
-      cursor: "pointer", fontWeight: "500", fontSize: "0.9rem", transition: "all 0.2s", display: "flex", alignItems: "center", gap: "6px"
+    btn: (color = colors.primary, disabled = false) => ({
+      padding: "0.6rem 1.2rem", backgroundColor: disabled ? "#9CA3AF" : color, color: "white", border: "none", borderRadius: "8px",
+      cursor: disabled ? "not-allowed" : "pointer", fontWeight: "500", fontSize: "0.9rem", transition: "all 0.2s", display: "flex", alignItems: "center", gap: "6px", opacity: disabled ? 0.7 : 1
     }),
     card: { backgroundColor: colors.card, borderRadius: "16px", padding: "1.5rem", marginBottom: "2rem", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)", display: "flex", flexDirection: "row", gap: "2rem", flexWrap: "wrap" },
     shopInfo: { flex: "1 1 400px", borderRight: "1px solid " + colors.border, paddingRight: "2rem" },
@@ -578,27 +630,67 @@ export default function Dashboard() {
     galleryImg: { maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" },
     galleryNav: { position: "absolute", top: "50%", transform: "translateY(-50%)", background: "rgba(255,255,255,0.2)", color: "white", border: "none", padding: "1rem", cursor: "pointer", fontSize: "2rem", borderRadius: "50%", zIndex: 10 },
     galleryStrip: { height: "100px", display: "flex", gap: "10px", padding: "10px", overflowX: "auto", background: "#111", justifyContent: "center" },
-    stripThumb: (active) => ({ height: "100%", width: "auto", opacity: active ? 1 : 0.5, cursor: "pointer", borderRadius: "4px", border: active ? "2px solid white" : "none" })
+    stripThumb: (active) => ({ height: "100%", width: "auto", opacity: active ? 1 : 0.5, cursor: "pointer", borderRadius: "4px", border: active ? "2px solid white" : "none" }),
+    planBox: { background: "linear-gradient(135deg, #4F46E5 0%, #2563EB 100%)", color: "white", padding: "0.8rem 1.2rem", borderRadius: "8px", fontSize: "0.9rem", display: "flex", alignItems: "center", gap: "15px", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)", marginBottom: "1.5rem", flexWrap: "wrap"}
   };
+
+  // Derived State for Button Logic
+  const shopsLeft = planInfo?.usage?.shops_left ?? 0;
+  const offersLeft = planInfo?.usage?.offers_left ?? 0;
+  const isShopLimitReached = shopsLeft <= 0;
+  const isOfferLimitReached = offersLeft <= 0;
 
   return (
     <div style={s.page}>
       <Navbar />
 
+      {/* --- PLAN USAGE INFO BOX --- */}
+      {planInfo && planInfo.subscribed && (
+        <div style={s.planBox}>
+          <span style={{fontWeight: "bold", textTransform: "capitalize", fontSize: "1rem"}}>
+             👑 Plan: {planInfo.plan}
+          </span>
+          <div style={{height: "20px", width: "1px", background: "rgba(255,255,255,0.3)"}}></div>
+          <span>Shops left: <strong>{shopsLeft}</strong></span>
+          <div style={{height: "20px", width: "1px", background: "rgba(255,255,255,0.3)"}}></div>
+          <span>Offers left: <strong>{offersLeft}</strong></span>
+        </div>
+      )}
+
       <div style={s.header}>
         <h2 style={s.title}>{TXT.dashboard[lang]}</h2>
         <div style={s.btnGroup}>
-          <button style={s.btn(colors.success)} onClick={handleAddOpen}>{TXT.addShop[lang]}</button>
+
+          {/* ADD SHOP BUTTON - Disabled when limit reached */}
+          <button
+            style={s.btn(colors.success, isShopLimitReached)}
+            onClick={() => handleAddOpen()}
+            disabled={isShopLimitReached}
+            title={isShopLimitReached ? "Plan limit reached" : ""}
+          >
+            {TXT.addShop[lang]}
+          </button>
 
           {/* --- NAVIGATE TO MY JOBS PAGE --- */}
           <button style={s.btn(colors.primary)} onClick={() => navigate("/my-jobs")}>
              {TXT.myJobs ? TXT.myJobs[lang] : "+ My Jobs"}
           </button>
 
-          <button style={s.btn(colors.primary)} onClick={() => {
-            setOfferForm({ shop_id: "", file: null });
-            setShowOfferForm(true);
-          }}>{TXT.addOffer[lang]}</button>
+          {/* ADD OFFER BUTTON - Disabled when limit reached */}
+          <button
+            style={s.btn(colors.primary, isOfferLimitReached)}
+            onClick={() => {
+              if (checkLimit("offer")) {
+                setOfferForm({ shop_id: "", file: null });
+                setShowOfferForm(true);
+              }
+            }}
+            disabled={isOfferLimitReached}
+            title={isOfferLimitReached ? "Plan limit reached" : ""}
+          >
+            {TXT.addOffer[lang]}
+          </button>
+
           <button style={{...s.btn("white"), color: colors.text, border: "1px solid #ddd"}} onClick={() => navigate(-1)}>
             ← {TXT.back[lang]}
           </button>
