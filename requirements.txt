@@ -10,3 +10,4 @@ python-jose[cryptography]
 PyJWT
 deep-translator
 cachetools
+razorpay==1.4.2
