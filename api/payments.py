@@ -9,8 +9,8 @@ import razorpay
 import os
 import hmac
 import hashlib
-from plan_expiry_mail import send_payment_success_mail
-from plan_config import PLAN_CONFIG
+from api.plan_expiry_mail import send_payment_success_mail
+from api.plan_config import PLAN_CONFIG
 
 load_dotenv(override=True)
 # ==================================================
