@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Body, HTTPException, Request
 from datetime import datetime, timedelta
-from common_urldb import db
-from auth_jwt import verify_token
+from api.common_urldb import db
+from api.auth_jwt import verify_token
 from dotenv import load_dotenv
 
 
