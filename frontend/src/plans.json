@@ -4,31 +4,34 @@
       "id": "silver",
       "name": { "en": "Silver Plan", "ta": "சில்வர் திட்டம்" },
       "type": { "en": "Basic Monthly Listing", "ta": "அடிப்படை மாத பட்டியல்" },
-      "price": 299,
+      "price": 1,
       "badge": "Silver",
       "period": { "en": "/ month", "ta": "/ மாதம்" },
-      "dayPrice": "₹10 / day",
-      "features": ["listed", "basic", "vis1"]
-    },
-    {
-      "id": "platinum",
-      "name": { "en": "Platinum Plan", "ta": "பிளாட்டினம் திட்டம்" },
-      "type": { "en": "Best Long-Term Value", "ta": "சிறந்த நீண்டகால மதிப்பு" },
-      "price": 1499,
-      "badge": "Platinum",
-      "period": { "en": "/ year", "ta": "/ வருடம்" },
-      "dayPrice": "₹4 / day",
-      "features": ["top", "premium", "vis3", "adsUnlimited"]
+      "dayPrice": "₹17 / day",
+      "features": ["listed", "basic", "vis1"],
+      "autopay": true
     },
     {
       "id": "gold",
       "name": { "en": "Gold Plan", "ta": "கோல்ட் திட்டம்" },
       "type": { "en": "3 Months Boost", "ta": "3 மாத மேம்பாடு" },
-      "price": 799,
+      "price": 999,
       "badge": "Gold",
       "period": { "en": "/ 3 months", "ta": "/ 3 மாதம்" },
-      "dayPrice": "₹8 / day",
-      "features": ["priority", "vis2", "ads"]
+      "dayPrice": "₹11 / day",
+      "features": ["priority", "vis2", "ads"],
+      "autopay": true
+    },
+    {
+      "id": "platinum",
+      "name": { "en": "Platinum Plan", "ta": "பிளாட்டினம் திட்டம்" },
+      "type": { "en": "Best Long-Term Value", "ta": "சிறந்த நீண்டகால மதிப்பு" },
+      "price": 3999,
+      "badge": "Platinum",
+      "period": { "en": "/ 6 months", "ta": "/ 6 மாதம்" },
+      "dayPrice": "₹22 / day",
+      "features": ["top", "premium", "vis3", "adsUnlimited"],
+      "autopay": true
     }
   ]
 }
