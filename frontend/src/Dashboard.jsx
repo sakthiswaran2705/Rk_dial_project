@@ -6,7 +6,7 @@ import Navbar from "./Navbar";
 // --- CONSTANTS ---
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // 20MB
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const mediaUrl = (path) => (path ? `${BACKEND_URL}/${path}` : "");
 
