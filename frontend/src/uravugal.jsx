@@ -9,10 +9,9 @@ import {
 
 import occupationData from './occupation.json';
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL
+
 const UravugalForm = () => {
-  // ------------------------------------
-  // STATE
-  // ------------------------------------
+  
   const [lang, setLang] = useState('en');
   const [loading, setLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -59,7 +58,7 @@ const UravugalForm = () => {
       businessQuestion: "Are you running a business?",
       businessName: "Business Name",
       mobile: "Mobile Number",
-      email: "Email ID",
+      email: "Email ID (Optional)",
       submit: "SUBMIT DETAILS",
       loading: "Loading...",
       serverError: "Server Error.",
@@ -83,7 +82,7 @@ const UravugalForm = () => {
       businessQuestion: "நீங்கள் தொழில் செய்கிறீர்களா?",
       businessName: "நிறுவனத்தின் பெயர்",
       mobile: "கைபேசி எண்",
-      email: "மின்னஞ்சல் முகவரி",
+      email: "மின்னஞ்சல் முகவரி (விருப்பத்தேர்வு)",
       submit: "சமர்ப்பிக்கவும்",
       loading: "காத்திருக்கவும்...",
       serverError: "பிழை ஏற்பட்டது.",
@@ -137,7 +136,7 @@ const UravugalForm = () => {
     if (e.key === 'Enter') {
       e.preventDefault();
       if (occupationSearch.trim()) {
-         addOccupation(occupationSearch);
+          addOccupation(occupationSearch);
       }
     }
   };
@@ -176,7 +175,7 @@ const UravugalForm = () => {
         { field: 'mother_pattapaiyar', label: `${curT.pattapaiyar} (Mother)` },
         { field: 'mother_native_place', label: `${curT.native} (Mother)` },
         { field: 'contact_number', label: curT.mobile },
-        { field: 'email', label: curT.email },
+        // Email removed from mandatory validation
     ];
 
     let missingFields = [];
@@ -251,7 +250,7 @@ const UravugalForm = () => {
 
   return (
     <div className="min-vh-100 d-flex justify-content-center align-items-center py-5"
-         style={{ background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)' }}>
+          style={{ background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)' }}>
 
       <div className="container">
         <div className="row justify-content-center">
@@ -378,7 +377,7 @@ const UravugalForm = () => {
 
                     {/* BUSINESS CHECKBOX */}
                     <div className="col-12 mt-3">
-                       <div className="form-check">
+                        <div className="form-check">
                           <input
                             className="form-check-input"
                             type="checkbox"
@@ -390,12 +389,12 @@ const UravugalForm = () => {
                           <label className="form-check-label fw-bold ms-2 pt-1" htmlFor="businessCheck" style={{cursor:'pointer'}}>
                             {curT.businessQuestion}
                           </label>
-                       </div>
+                        </div>
                     </div>
 
                     {/* Conditional Business Name Field */}
                     {formData.business_running === 'yes' && (
-                       <div className="col-12 mt-3 fade-in">
+                        <div className="col-12 mt-3 fade-in">
                           <BootstrapInput
                             label={curT.businessName}
                             name="business_name"
@@ -404,14 +403,23 @@ const UravugalForm = () => {
                             required
                             icon={<Building2 size={18}/>}
                           />
-                       </div>
+                        </div>
                     )}
 
                     <div className="col-md-6 mt-3">
                       <BootstrapInput label={curT.mobile} name="contact_number" value={formData.contact_number} onChange={handleChange} required type="tel" icon={<Phone size={18}/>} />
                     </div>
+                    {/* EMAIL - OPTIONAL NOW */}
                     <div className="col-md-6 mt-3">
-                      <BootstrapInput label={curT.email} name="email" value={formData.email} onChange={handleChange} required type="email" icon={<Mail size={18}/>} />
+                      <BootstrapInput 
+                        label={curT.email} 
+                        name="email" 
+                        value={formData.email} 
+                        onChange={handleChange} 
+                        // removed 'required' prop
+                        type="email" 
+                        icon={<Mail size={18}/>} 
+                      />
                     </div>
                   </div>
 
