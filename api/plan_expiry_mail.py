@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta
 from bson import ObjectId
-from common_urldb import db
+from api.common_urldb import db
 import smtplib
 from email.mime.text import MIMEText
-from mail_settings import EMAILADDRESS, EMAILPASSWORD
+from api.mail_settings import EMAILADDRESS, EMAILPASSWORD
 
 
 col_payments = db["payments"]
