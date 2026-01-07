@@ -12,6 +12,9 @@ import MyJobs from "./MyJobs";
 import SearchResults from "./SearchResults.jsx";
 import Jobs from "./Jobs";
 import JobDetails from "./JobDetails";
+import Settings from "./settings";
+import Payments from "./payments";
+import SearchResults from "./SearchResults.jsx";
 
 // POLICY PAGES
 import Contact from "./Contact";
@@ -35,6 +38,11 @@ function RouterPage() {
       {/* DASHBOARD */}
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/my-jobs" element={<MyJobs />} />
+      <Route path="/settings" element={<Settings />} />
+      <Route path="/payments" element={<Payments />} />
+      <Route path="/results" element={<SearchResults />} />
+
+
 
       {/* SHOP */}
       <Route path="/shop" element={<ShopDetails />} />
