@@ -13,6 +13,10 @@ from api.offers_for_particular_shop import router as particular_offer_router
 from api.jobs_get import router as jobs_router
 from api.uravugal import router as uravugal_router
 from api.payments import  router as payment_router
+from dotenv import load_dotenv
+from api.otp_mail import router as otp_router
+from api.notifications_setting import router as notification_settings_router
+from api.shop_views import router as shop_views_router
 app = FastAPI(
     title="RK-DIAL API",
     description="API endpoints for RK-Dial Application",
@@ -46,6 +50,9 @@ app.include_router(particular_offer_router)
 app.include_router(jobs_router)
 app.include_router(uravugal_router)
 app.include_router(payment_router)
+app.include_router(otp_router)
+app.include_router(notification_settings_router)
+app.include_router(shop_views_router)
 
 # Root
 @app.get("/")
