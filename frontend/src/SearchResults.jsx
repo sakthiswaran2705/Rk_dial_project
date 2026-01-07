@@ -256,15 +256,14 @@ export default function SearchResults() {
 
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
-  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
   useEffect(() => {
     const fetchResults = async () => {
       setLoading(true);
       try {
         const res = await fetch(
-            `${BACKEND_URL}?name=${encodeURIComponent(category)}&place=${encodeURIComponent(city)}&lang=${lang}`
-          );
-
+          `http://127.0.0.1:8000/shop/search/?name=${encodeURIComponent(category)}&place=${encodeURIComponent(city)}&lang=${lang}`
+        );
         const json = await res.json();
         const data = json.data || [];
         setResults(data);
@@ -360,13 +359,11 @@ export default function SearchResults() {
 
               // Image Logic
               let imgUrl = "https://via.placeholder.com/600x400?text=No+Image";
-
               if (s.main_image) {
-                imgUrl = `${BACKEND_URL}/${s.main_image}`;
-              } else if (s.media?.length > 0 && s.media[0]?.path) {
-                imgUrl = `${BACKEND_URL}/${s.media[0].path}`;
+                imgUrl = `http://127.0.0.1:8000/${s.main_image}`;
+              } else if (s.media && s.media.length > 0 && s.media[0].path) {
+                imgUrl = `http://127.0.0.1:8000/${s.media[0].path}`;
               }
-
 
               const rating = item.avg_rating ? parseFloat(item.avg_rating).toFixed(1) : "New";
 
