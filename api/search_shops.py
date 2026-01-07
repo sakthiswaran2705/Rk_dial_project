@@ -14,7 +14,7 @@ col_category = db["category"]
 col_reviews = db["reviews"]
 
 
-# ---------------- SAFE OBJECT ----------------
+
 def safe(x):
     if isinstance(x, ObjectId):
         return str(x)
@@ -52,7 +52,7 @@ def phonetic_tamil(text: str):
     return " ".join(out)
 
 
-
+# ---------------- TRANSLATION SAFETY ----------------
 def is_base64(text: str) -> bool:
     return len(text) > 200 and re.fullmatch(r"[A-Za-z0-9+/=]+", text) is not None
 
@@ -71,7 +71,6 @@ def should_translate(text: str) -> bool:
     return True
 
 
-# ---------------- TRANSLATION ----------------
 def translate_text_en_to_ta(text: str):
     if not should_translate(text):
         return text
@@ -113,6 +112,7 @@ def get_static(
     if not name:
         return {"data": []}
 
+    # ---------- INPUT NORMALIZATION ----------
     search_name = name
     search_place = place
 
@@ -178,7 +178,7 @@ def get_static(
                 final_categories.append({
                     "_id": str(cat["_id"]),
                     "name": cat.get("name"),
-                    "category_image": cat.get("category_image")  # ✅ PATH
+                    "category_image": cat.get("category_image") 
                 })
 
         # ---------- SHOP NAME ----------
