@@ -15,5 +15,86 @@
   "no results": "எந்த முடிவும் இல்லை",
    "try different search": "வேறு தேடலை முயற்சிக்கவும்",
   "RK Dial": "ஆர் கே",
-  "About": "எங்களை பற்றி"
+  "About": "எங்களை பற்றி",
+  "Jobs": "வேலைகள்",
+  "Profile": "சுயவிவரம்",
+  "Dashboard": "டாஷ்போர்டு",
+  "Settings": "அமைப்புகள்",
+  "Logout": "வெளியேறு",
+   "Account Settings": "கணக்கு அமைப்புகள்",
+  "Manage account": "உங்கள் பாதுகாப்பு மற்றும் சந்தா விவரங்களை நிர்வகிக்கவும்.",
+  "Security": "பாதுகாப்பு",
+  "Notifications": "அறிவிப்புகள்",
+  "Billing & Plans": "பில்லிங் & திட்டங்கள்",
+  "Change Password": "கடவுச்சொல்லை மாற்று",
+  "Current Password": "தற்போதைய கடவுச்சொல்",
+  "New Password": "புதிய கடவுச்சொல்",
+  "Enter current password": "தற்போதைய கடவுச்சொல்லை உள்ளிடவும்",
+  "Enter new password": "புதிய கடவுச்சொல்லை உள்ளிடவும்",
+  "Update Password": "கடவுச்சொல்லை புதுப்பிக்கவும்",
+  "Updating": "புதுப்பிக்கப்படுகிறது...",
+  "Notification Preferences": "அறிவிப்பு விருப்பங்கள்",
+  "Choose notification": "எப்படி அறிவிப்புகளைப் பெற விரும்புகிறீர்கள் என்பதைத் தேர்வு செய்யவும்.",
+  "Email Notifications": "மின்னஞ்சல் அறிவிப்புகள்",
+  "Email desc": "மின்னஞ்சல் மூலம் புதுப்பிப்புகளைப் பெறுங்கள்.",
+  "Push Notifications": "புஷ் அறிவிப்புகள்",
+  "Push desc": "உங்கள் சாதனத்தில் நேரடி அறிவிப்புகளைப் பெறுங்கள்.",
+  "Save Preferences": "விருப்பங்களை சேமிக்கவும்",
+  "Saving": "சேமிக்கப்படுகிறது...",
+  "Billing & History": "பில்லிங் & வரலாறு",
+  "Billing desc": "பணம் செலுத்தும் முறைகள் மற்றும் ரசீதுகளை நிர்வகிக்கவும்.",
+  "Active Subscription": "செயலில் உள்ள சந்தா",
+  "Payment Portal": "பணம் செலுத்தும் பகுதி",
+  "Payment desc": "முழு கட்டண வரலாறையும் ரசீதுகளையும் பார்க்கவும்.",
+  "Manage Billing": "பில்லிங்கை நிர்வகிக்கவும்",
+
+  "Manage your security preferences and subscription details.":
+  "உங்கள் பாதுகாப்பு மற்றும் சந்தா விவரங்களை நிர்வகிக்கவும்.",
+
+  "Choose how you want to be notified about updates and activity.":
+  "புதுப்பிப்புகள் மற்றும் செயல்பாடுகளுக்கான அறிவிப்புகளை எவ்வாறு பெற வேண்டும் என்பதைத் தேர்வு செய்யவும்.",
+
+  "Manage your payment methods and view invoices.":
+  "உங்கள் கட்டண முறைகளை நிர்வகித்து ரசீதுகளைப் பார்க்கவும்.",
+
+  "Access your full payment history and invoices.":
+  "உங்கள் முழு கட்டண வரலாறையும் ரசீதுகளையும் அணுகுங்கள்.",
+  "Receive real-time alerts on your device.":
+   "உங்கள் சாதனத்தில் நிகழ்நேர விழிப்பூட்டல்களைப் பெறுங்கள்.",
+  "Receive updates and newsletters via email.":
+   "மின்னஞ்சல் மூலம் புதுப்பிப்புகள் மற்றும் செய்திமடல்களைப் பெறுங்கள்.",
+  "Expiry Date":
+  "காலாவதி தேதி",
+  "Failed to load plan details": "திட்ட விவரங்களை ஏற்ற முடியவில்லை",
+  "Please login first": "தயவுசெய்து முதலில் உள்நுழையவும்",
+  "Failed to initiate AutoPay": "AutoPay-ஐ துவக்க முடியவில்லை",
+  "✅ AutoPay enabled successfully!": "✅ AutoPay வெற்றிகரமாக இயக்கப்பட்டது!",
+  "AutoPay setup cancelled": "AutoPay அமைப்பு ரத்து செய்யப்பட்டது",
+  "Server error": "சர்வர் பிழை",
+  "Loading payment details...": "கட்டண விவரங்கள் ஏற்றப்படுகின்றன...",
+  "No Active Subscription": "செயலில் உள்ள சந்தா இல்லை",
+  "You are currently on the free tier. Upgrade to unlock features.": "நீங்கள் தற்போது இலவச திட்டத்தில் உள்ளீர்கள். அம்சங்களை திறக்க மேம்படுத்தவும்.",
+  "View Plans": "திட்டங்களை பார்க்கவும்",
+  "Subscription & Billing": "சந்தா மற்றும் பில்லிங்",
+  "Manage your plan, billing history and usage.": "உங்கள் திட்டம், பில்லிங் வரலாறு மற்றும் பயன்பாட்டை நிர்வகிக்கவும்.",
+  "Billing Cycle": "பில்லிங் சுழற்சி",
+  "Expiry Date": "காலாவதி தேதி",
+  "Time Remaining": "மீதமுள்ள நேரம்",
+  "Days": "நாட்கள்",
+  "Your plan will automatically expire on this date unless AutoPay is enabled.": "AutoPay இயக்கப்படாவிட்டால், உங்கள் திட்டம் இந்த தேதியில் தானாகவே காலாவதியாகிவிடும்.",
+  "Enable AutoPay": "AutoPay-ஐ இயக்கு",
+  "Automatically renew your plan to avoid interruption.": "தடையைத் தவிர்க்க உங்கள் திட்டத்தை தானாகவே புதுப்பிக்கவும்.",
+  "Enable Now": "இப்போது இயக்கு",
+  "Current Usage": "தற்போதைய பயன்பாடு",
+  "Shops Created": "உருவாக்கப்பட்ட கடைகள்",
+  "Offers Posted": "பதிவிடப்பட்ட சலுகைகள்",
+  "Need more limits? Upgrade to our Premium plan for unlimited access.": "கூடுதல் வரம்புகள் தேவையா? வரம்பற்ற அணுகலுக்கு எங்கள் பிரீமியம் திட்டத்திற்கு மாறவும்.",
+  "Upgrade Plan": "திட்டத்தை மேம்படுத்தவும்",
+  "Highest Plan Active": "உயர்ந்த திட்டம் செயலில் உள்ளது",
+  "You are on the top tier plan. Enjoy full access!": "நீங்கள் உயர் அடுக்கு திட்டத்தில் உள்ளீர்கள். முழு அணுகலை அனுபவிக்கவும்!"
+
+
+
+
+
 }
