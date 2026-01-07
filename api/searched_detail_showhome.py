@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Form, Depends, Query, Request
 from bson import ObjectId
-from common_urldb import db
+from api.common_urldb import db
 from datetime import datetime
 from api.auth_jwt import verify_token
 
