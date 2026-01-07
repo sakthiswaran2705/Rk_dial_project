@@ -7,7 +7,7 @@ import logo from "./flamingtext_com-267266537.png";
 import { authenticatedFetch } from "./authFetch.jsx";
 
 // Configuration
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_BACKEND_URL;
 const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
 // --- DEBOUNCE HOOK (Internal for Navbar) ---
