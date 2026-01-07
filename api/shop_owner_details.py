@@ -9,19 +9,19 @@ from api.common_urldb import db
 # Ensure this path matches your project structure
 from api.email_sender import send_email
 
-from auth_jwt import (
+from api.auth_jwt import (
     create_access_token,
     create_refresh_token,
     verify_token,
     verify_refresh_token,
 )
-from payments import check_shop_limit, check_offer_limit
+from api.payments import check_shop_limit, check_offer_limit
 
 # --- TRANSLATOR SYSTEM HELPERS ---
-from translator import ta_to_en, en_to_ta
-from cache import get_cached, set_cache
+from api.translator import ta_to_en, en_to_ta
+from api.cache import get_cached, set_cache
 
-# --- ROUTER AND COLLECTIONS ---
+
 router = APIRouter()
 col_user = db["user"]
 col_shop = db["shop"]
@@ -32,9 +32,7 @@ col_jobs = db["jobs"]
 col_notifications = db["notifications"]
 
 
-# ==========================================
-#        HELPER FUNCTIONS
-# ==========================================
+
 
 def safe(obj):
     if isinstance(obj, ObjectId):
