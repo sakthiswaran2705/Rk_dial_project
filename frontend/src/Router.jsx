@@ -9,7 +9,6 @@ import OfferDetails from "./OfferDetails.jsx";
 import OffersList from "./offerlist.jsx";
 import OfferForShop from "./offer_for_shop.jsx";
 import MyJobs from "./MyJobs";
-import SearchResults from "./SearchResults.jsx";
 import Jobs from "./Jobs";
 import JobDetails from "./JobDetails";
 import Settings from "./settings";
