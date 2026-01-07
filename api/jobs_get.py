@@ -9,7 +9,6 @@ from api.cache import get_cached, set_cache
 router = APIRouter()
 col_jobs = db["jobs"]
 
-# ---------------- SAFE OBJECT ----------------
 def safe(doc):
     if not doc:
         return None
@@ -21,7 +20,6 @@ def safe(doc):
     return doc
 
 
-# ---------------- TRANSLATION ----------------
 def to_en(text):
     if not text:
         return text
@@ -50,44 +48,23 @@ def to_ta(text):
         return text
 
 
-# ===============================
 # GET JOBS (CITY WISE)
-# ===============================
-@router.get("/jobs/", operation_id="getJobs")
+@router.get("/jobs/")
 def get_jobs(
-    city_id: str | None = Query(None),
     city_name: str | None = Query(None),
     job_title: str | None = Query(None),
     lang: str = Query("en")
 ):
     query = {}
 
-    # ---------- CITY FILTER ----------
-    if city_id:
-        try:
-            query["city_id"] = ObjectId(city_id)
-        except:
-            return {
-                "status": False,
-                "message": "Invalid city id",
-                "jobs": []
-            }
-
     if city_name:
-        if lang == "ta":
-            city_name = to_en(city_name)
         query["city_name"] = {"$regex": city_name, "$options": "i"}
 
-    # ---------- JOB TITLE SEARCH ----------
     if job_title:
-        if lang == "ta":
-            job_title = to_en(job_title)
         query["job_title"] = {"$regex": job_title, "$options": "i"}
 
-    # ---------- FETCH ----------
     jobs = list(col_jobs.find(query).sort("created_at", -1))
 
-    # ---------- TRANSLATE OUTPUT ----------
     output = []
     for job in jobs:
         job = safe(job)
@@ -106,6 +83,7 @@ def get_jobs(
         "count": len(output),
         "jobs": output
     }
+
 
 
 # ===============================
