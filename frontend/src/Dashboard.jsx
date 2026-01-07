@@ -3,14 +3,14 @@ import { authenticatedFetch } from "./authFetch";
 import { useNavigate } from "react-router-dom";
 import Navbar from "./Navbar";
 
-// --- CONSTANTS ---
+// CONSTANTS
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // 20MB
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const mediaUrl = (path) => (path ? `${BACKEND_URL}/${path}` : "");
 
-// --- TRANSLATION MAP ---
+//TRANSLATION MAP
 const TXT = {
   dashboard: { en: "Shop Dashboard", ta: "கடை கட்டுப்பாட்டுப் பலகை" },
   addShop: { en: "+ Add Shop", ta: "+ கடையைச் சேர்" },
