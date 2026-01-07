@@ -1,14 +1,12 @@
-
 import React, { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import Navbar from "./Navbar.jsx";
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 /* ---------------- MODERN STYLES SYSTEM ---------------- */
 const styles = `
   :root {
     --primary: #ff5a5f;
-    --bg: #f3f4f6; /* Slightly darker grey for better contrast */
+    --bg: #f3f4f6;
     --card-bg: #ffffff;
     --text-main: #1f2937;
     --text-sub: #6b7280;
@@ -34,8 +32,8 @@ const styles = `
   /* ---------- STICKY HEADER ---------- */
   .sticky-header {
     position: sticky;
-    top: var(--navbar-height);;
-    z-index: 90; /* Lower than Navbar if Navbar uses 100 */
+    top: var(--navbar-height);
+    z-index: 90;
     background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -46,7 +44,7 @@ const styles = `
   }
 
   .header-inner {
-    max-width: 1200px; /* Wider container for grid */
+    max-width: 1200px;
     margin: auto;
     padding: 0 20px;
     display: flex;
@@ -102,7 +100,7 @@ const styles = `
 
   .results-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); /* Responsive Grid */
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 24px;
   }
 
@@ -216,7 +214,7 @@ const styles = `
 
   /* ---------- ACTION BUTTONS ---------- */
   .actions {
-    margin-top: auto; /* Pushes to bottom */
+    margin-top: auto;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 8px;
@@ -258,21 +256,21 @@ export default function SearchResults() {
 
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
-
+  const BACKEND_URL = 
   useEffect(() => {
     const fetchResults = async () => {
       setLoading(true);
       try {
         const res = await fetch(
-          `${BACKEND_URL}/shop/search/?name=${encodeURIComponent(category)}&place=${encodeURIComponent(city)}&lang=${lang}`
-
+          `http://127.0.0.1:8000/shop/search/?name=${encodeURIComponent(category)}&place=${encodeURIComponent(city)}&lang=${lang}`
         );
         const json = await res.json();
         const data = json.data || [];
         setResults(data);
 
         if(data.length > 0) {
-            sessionStorage.setItem("SEARCH_CONTEXT", JSON.stringify(data));
+            // ⭐ FIXED: Key must match what ShopDetails expects
+            sessionStorage.setItem("SEARCH_CONTEXT_SHOPS", JSON.stringify(data));
         }
 
       } catch (error) {
@@ -299,19 +297,21 @@ export default function SearchResults() {
   const handleMap = (e, name, cityLocation) => {
     e.stopPropagation();
     const query = `${name}, ${cityLocation}`;
+    // ⭐ FIXED: Correct Google Maps Search URL
     window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`, "_blank");
   };
 
   const navigateToShop = (item) => {
     const shop = item.shop || item.shop?.shop || item;
     const cityObj = item.city || shop.city || {};
+    // Note: We don't need to save SELECTED_SHOP here necessarily because
+    // ShopDetails handles it, but passing state is good.
     navigate("/shop", { state: { shop, city: cityObj } });
   };
 
   return (
     <>
       <style>{styles}</style>
-      {/* NAVBAR PRESERVED */}
       <Navbar />
 
       {/* HEADER */}
@@ -360,10 +360,9 @@ export default function SearchResults() {
               // Image Logic
               let imgUrl = "https://via.placeholder.com/600x400?text=No+Image";
               if (s.main_image) {
-                imgUrl = `${BACKEND_URL}/${s.main_image}`
-;
+                imgUrl = `http://127.0.0.1:8000/${s.main_image}`;
               } else if (s.media && s.media.length > 0 && s.media[0].path) {
-                imgUrl = `${BACKEND_URL}/${s.media?.[0]?.path}`;
+                imgUrl = `http://127.0.0.1:8000/${s.media[0].path}`;
               }
 
               const rating = item.avg_rating ? parseFloat(item.avg_rating).toFixed(1) : "New";
