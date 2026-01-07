@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_BACKEND_URL;
 
 // 🔧 CONFIGURATION: Change this to match your database's highest plan name
 const HIGHEST_PLAN = "premium";
@@ -22,7 +22,6 @@ function Payments() {
   const [loading, setLoading] = useState(true);
   const [planData, setPlanData] = useState(null);
 
-  // ================= FETCH PLAN =================
   const fetchPlan = async () => {
     try {
       const res = await fetch(`${API_BASE}/my-plan/`, {
@@ -45,7 +44,6 @@ function Payments() {
     fetchPlan();
   }, []);
 
-  // ================= AUTOPAY =================
   const enableAutoPay = async () => {
     if (!token) return alert(t("Please login first"));
 
@@ -103,7 +101,6 @@ function Payments() {
     return pct > 100 ? 100 : pct;
   };
 
-  // ================= RENDER =================
   if (loading) return <div className="container py-5 text-center text-muted">{t("Loading payment details...")}</div>;
 
   if (!planData) {
@@ -133,7 +130,6 @@ function Payments() {
 
       <div className="row g-4">
 
-        {/* === LEFT COLUMN: PLAN DETAILS === */}
         <div className="col-md-7">
 
           {/* Active Plan Card */}
