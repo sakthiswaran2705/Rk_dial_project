@@ -4,7 +4,7 @@ from cachetools import TTLCache
 TA_EN_TRANSLATOR = GoogleTranslator(source="ta", target="en")
 EN_TA_TRANSLATOR = GoogleTranslator(source="en", target="ta")
 
-# ⚡ In-memory cache (1 day)
+
 cache = TTLCache(maxsize=10000, ttl=86400)
 
 def should_translate(text: str):
