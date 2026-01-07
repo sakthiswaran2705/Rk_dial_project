@@ -256,14 +256,15 @@ export default function SearchResults() {
 
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
-  const BACKEND_URL = 
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
   useEffect(() => {
     const fetchResults = async () => {
       setLoading(true);
       try {
         const res = await fetch(
-          `http://127.0.0.1:8000/shop/search/?name=${encodeURIComponent(category)}&place=${encodeURIComponent(city)}&lang=${lang}`
-        );
+            `${BACKEND_URL}?name=${encodeURIComponent(category)}&place=${encodeURIComponent(city)}&lang=${lang}`
+          );
+
         const json = await res.json();
         const data = json.data || [];
         setResults(data);
