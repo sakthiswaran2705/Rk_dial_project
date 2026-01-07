@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request
 from datetime import datetime
 from pymongo import ReturnDocument
 import redis
-from common_urldb import db
+from api.common_urldb import db
 
 router = APIRouter()
 
