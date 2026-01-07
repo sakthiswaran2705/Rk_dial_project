@@ -5,9 +5,9 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-from common_urldb import db
-from mail_settings import EMAILADDRESS, EMAILPASSWORD
-from shop_owner_details import hash_password
+from api.common_urldb import db
+from api.mail_settings import EMAILADDRESS, EMAILPASSWORD
+from api.shop_owner_details import hash_password
 
 router = APIRouter()
 col_user = db["user"]
