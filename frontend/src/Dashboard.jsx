@@ -6,7 +6,7 @@ import Navbar from "./Navbar";
 // --- CONSTANTS ---
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // 20MB
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+const BACKEND_URL = "http://127.0.0.1:8000";
 
 const mediaUrl = (path) => (path ? `${BACKEND_URL}/${path}` : "");
 
@@ -184,19 +184,22 @@ export default function Dashboard() {
     } catch (e) { console.warn("Plan check failed", e); }
   }
 
+  // --- UPDATED CHECKLIMIT FUNCTION ---
   const checkLimit = (type) => {
-    // 1. If Plan info hasn't loaded yet, block nicely or wait (returning false here)
+    // 1. If Plan info hasn't loaded yet, block nicely
     if (!planInfo) return false;
 
-    // 2. Not Subscribed
+    // 2. Not Subscribed Check
     if (!planInfo.subscribed) {
-      if(window.confirm("You need an active subscription. View Plans?")) {
+      // Show confirmation dialog as requested
+      if (window.confirm("You need an active subscription to continue. Do you want to view plans?")) {
         navigate("/plan");
       }
+      // Return false to stop the modal from opening
       return false;
     }
 
-    // 3. Shop Limit
+    // 3. Subscription Active: Check Shop Limit
     if (type === "shop") {
       if (planInfo.usage.shops_left <= 0) {
         alert(`You have reached the shop limit for the ${planInfo.plan} plan.`);
@@ -204,7 +207,7 @@ export default function Dashboard() {
       }
     }
 
-    // 4. Offer Limit
+    // 4. Subscription Active: Check Offer Limit
     if (type === "offer") {
       if (planInfo.usage.offers_left <= 0) {
         alert(`You have reached the offer limit for the ${planInfo.plan} plan.`);
@@ -212,6 +215,7 @@ export default function Dashboard() {
       }
     }
 
+    // If all checks pass, allow access
     return true;
   };
 
@@ -262,8 +266,7 @@ export default function Dashboard() {
   // --- SHOP FORM HANDLERS ---
 
   const handleAddOpen = () => {
-    // Limit check is handled by the button disabled state,
-    // but we check here again for safety if triggered programmatically
+    // Check Limit handles Subscription check + Limit check
     if (!checkLimit("shop")) return;
 
     setEditingShop(null); // Flag for Add Mode
@@ -610,7 +613,7 @@ export default function Dashboard() {
     btnGroup: { display: "flex", gap: "12px" },
     btn: (color = colors.primary, disabled = false) => ({
       padding: "0.6rem 1.2rem", backgroundColor: disabled ? "#9CA3AF" : color, color: "white", border: "none", borderRadius: "8px",
-      cursor: disabled ? "not-allowed" : "pointer", fontWeight: "500", fontSize: "0.9rem", transition: "all 0.2s", display: "flex", alignItems: "center", gap: "6px", opacity: disabled ? 0.7 : 1
+      cursor: disabled ? "not-allowed" : "pointer", fontWeight: "500",fontFamily:"Noto Sans Tamil", fontSize: "0.9rem", transition: "all 0.2s", display: "flex", alignItems: "center", gap: "6px", opacity: disabled ? 0.7 : 1
     }),
     card: { backgroundColor: colors.card, borderRadius: "16px", padding: "1.5rem", marginBottom: "2rem", boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)", display: "flex", flexDirection: "row", gap: "2rem", flexWrap: "wrap" },
     shopInfo: { flex: "1 1 400px", borderRight: "1px solid " + colors.border, paddingRight: "2rem" },
@@ -661,11 +664,11 @@ export default function Dashboard() {
         <h2 style={s.title}>{TXT.dashboard[lang]}</h2>
         <div style={s.btnGroup}>
 
-          {/* ADD SHOP BUTTON - Disabled when limit reached */}
+          {/* ADD SHOP BUTTON - UPDATED LOGIC */}
           <button
-            style={s.btn(colors.success, isShopLimitReached)}
+            style={s.btn(colors.success)}
             onClick={() => handleAddOpen()}
-            disabled={isShopLimitReached}
+            // Removed disabled attribute
             title={isShopLimitReached ? "Plan limit reached" : ""}
           >
             {TXT.addShop[lang]}
@@ -676,16 +679,17 @@ export default function Dashboard() {
              {TXT.myJobs ? TXT.myJobs[lang] : "+ My Jobs"}
           </button>
 
-          {/* ADD OFFER BUTTON - Disabled when limit reached */}
+          {/* ADD OFFER BUTTON - UPDATED LOGIC */}
           <button
-            style={s.btn(colors.primary, isOfferLimitReached)}
+            style={s.btn(colors.primary)}
             onClick={() => {
+              // Check limits/subscription first
               if (checkLimit("offer")) {
                 setOfferForm({ shop_id: "", file: null });
                 setShowOfferForm(true);
               }
             }}
-            disabled={isOfferLimitReached}
+            // Removed disabled attribute
             title={isOfferLimitReached ? "Plan limit reached" : ""}
           >
             {TXT.addOffer[lang]}
