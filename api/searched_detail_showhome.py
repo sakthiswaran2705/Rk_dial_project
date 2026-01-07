@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Form, Depends, Query
+from fastapi import APIRouter, Form, Depends, Query, Request
 from bson import ObjectId
-from api.common_urldb import db
+from common_urldb import db
 from datetime import datetime
 from api.auth_jwt import verify_token
 
@@ -12,6 +12,9 @@ router = APIRouter()
 col_category = db["category"]
 col_shop = db["shop"]
 col_reviews = db["reviews"]
+col_view_logs = db["shop_view_logs"]
+col_view_reports = db["shop_view_reports"]
+
 
 
 def serialize(doc):
@@ -19,18 +22,12 @@ def serialize(doc):
         doc["_id"] = str(doc["_id"])
     return doc
 
-
-
 def should_translate(text: str):
     if not text:
         return False
     if len(text) > 200:
         return False
-    if text.startswith("media/"):
-        return False
-    if text.startswith("http"):
-        return False
-    if "/" in text:
+    if text.startswith("media/") or text.startswith("http") or "/" in text:
         return False
     return True
 
@@ -52,7 +49,6 @@ def translate_dict(obj):
     if isinstance(obj, dict):
         new = {}
         for k, v in obj.items():
-            # ❌ NEVER TRANSLATE THESE FIELDS
             if k in ("_id", "category_image", "path", "date", "rating", "shop_id"):
                 new[k] = v
             else:
@@ -68,69 +64,108 @@ def translate_dict(obj):
     return obj
 
 
-# CATEGORY LIST API (IMAGE PATH SAFE)
+# ==================================================
+# CATEGORY LIST
+# ==================================================
 @router.get("/category/list/", operation_id="getCategoryList")
 def get_categories(lang: str = Query("en")):
+    data = list(col_category.find())
+    data = [serialize(c) for c in data]
+
+    if lang == "ta":
+        data = translate_dict(data)
+
+    return {"status": True, "data": data}
+
+
+# ==================================================
+# UNIQUE MONTHLY SHOP VIEW (NO DUPLICATE)
+# ==================================================
+@router.post("/shop/{shop_id}/view/", operation_id="addUniqueShopView")
+def add_unique_shop_view(
+    shop_id: str,
+    request: Request,
+    user_id: str = Depends(verify_token)
+):
     try:
-        data = list(col_category.find())
-        data = [serialize(c) for c in data]
+        oid = ObjectId(shop_id)
+    except:
+        return {"status": False, "message": "Invalid shop id"}
 
-        if lang == "ta":
-            data = translate_dict(data)
+    now = datetime.now()
+    month = now.month
+    year = now.year
 
-        return {"status": True, "data": data}
+    # 🔒 DUPLICATE CHECK (same user + same month)
+    exists = col_view_logs.find_one({
+        "shop_id": shop_id,
+        "user_id": user_id,
+        "month": month,
+        "year": year
+    })
 
-    except Exception as e:
-        return {"status": False, "error": str(e)}
+    if exists:
+        return {"status": True, "counted": False}
+
+    # ✅ LOG INSERT
+    col_view_logs.insert_one({
+        "shop_id": shop_id,
+        "user_id": user_id,
+        "month": month,
+        "year": year,
+        "created_at": now
+    })
+
+    # ✅ INCREMENT SHOP VIEW
+    col_shop.update_one(
+        {"_id": oid},
+        {"$inc": {"views": 1}}
+    )
+
+    return {"status": True, "counted": True}
 
 
-# SHOP MEDIA API
-
+# ==================================================
+# SHOP MEDIA + VIEWS
+# ==================================================
 @router.get("/shop/{shop_id}/media/", operation_id="getShopMedia")
 def get_shop_photos(shop_id: str):
-    try:
-        shop = col_shop.find_one({"_id": ObjectId(shop_id)})
-        if not shop:
-            return {"status": False, "message": "Shop not found"}
+    shop = col_shop.find_one({"_id": ObjectId(shop_id)})
+    if not shop:
+        return {"status": False, "message": "Shop not found"}
 
-        media = shop.get("media", [])
+    media = shop.get("media", [])
 
-        valid_media = [
-            {
-                "type": m.get("type"),
-                "path": m.get("path")
-            }
-            for m in media
-            if m.get("type") in ("image", "video") and m.get("path")
-        ]
+    valid_media = [
+        {"type": m.get("type"), "path": m.get("path")}
+        for m in media
+        if m.get("type") in ("image", "video") and m.get("path")
+    ]
 
-        return {
-            "status": True,
-            "media": valid_media,
-            "main_image": shop.get("main_image")
-        }
-
-    except Exception as e:
-        return {"status": False, "error": str(e)}
+    return {
+        "status": True,
+        "media": valid_media,
+        "main_image": shop.get("main_image"),
+        "views": shop.get("views", 0)
+    }
 
 
-
-# GET REVIEWS
 
 @router.get("/shop/{shop_id}/reviews/", operation_id="getShopReviews")
 def get_reviews(shop_id: str, lang: str = Query("en")):
-    try:
-        reviews = list(col_reviews.find({"shop_id": shop_id}))
-        for r in reviews:
-            r["_id"] = str(r["_id"])
+    reviews = list(
+        col_reviews
+        .find({"shop_id": shop_id})
+        .sort("created_at", -1)   # 👈 RECENT FIRST
+    )
 
-        if lang == "ta":
-            reviews = translate_dict(reviews)
+    for r in reviews:
+        r["_id"] = str(r["_id"])
 
-        return {"status": True, "reviews": reviews}
+    if lang == "ta":
+        reviews = translate_dict(reviews)
 
-    except Exception as e:
-        return {"status": False, "error": str(e)}
+    return {"status": True, "reviews": reviews}
 
 
 @router.post("/review/add/", operation_id="addReview")
@@ -142,7 +177,7 @@ def add_review_api(
 ):
     user = db.user.find_one({"_id": ObjectId(user_id)})
     if not user:
-        return {"status": False, "message": "User not found"}
+        return {"status": False}
 
     review_en = ta_to_en(review)
 
@@ -155,17 +190,13 @@ def add_review_api(
         "date": datetime.now().strftime("%d-%m-%Y")
     }
 
-    inserted = col_reviews.insert_one(data)
-    data["_id"] = str(inserted.inserted_id)
+    res = col_reviews.insert_one(data)
+    data["_id"] = str(res.inserted_id)
 
-    return {
-        "status": True,
-        "message": "Review added successfully",
-        "data": data
-    }
+    return {"status": True, "data": data}
 
 
-
+# DELETE REVIEW
 @router.delete("/review/delete/", operation_id="deleteReview")
 def delete_review(
     user_id: str = Depends(verify_token),
@@ -174,18 +205,8 @@ def delete_review(
     oid = ObjectId(review_id)
     review = col_reviews.find_one({"_id": oid})
 
-    if not review:
-        return {"status": False, "message": "Review not found"}
-
-    if review.get("user_id") != user_id:
-        return {
-            "status": False,
-            "message": "You are not allowed to delete this review"
-        }
+    if not review or review.get("user_id") != user_id:
+        return {"status": False}
 
     col_reviews.delete_one({"_id": oid})
-
-    return {
-        "status": True,
-        "message": "Review deleted successfully"
-    }
+    return {"status": True}
