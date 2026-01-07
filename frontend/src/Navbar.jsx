@@ -4,9 +4,10 @@ import { useTranslation } from "react-i18next";
 import { InputGroup, Button } from "@blueprintjs/core";
 import { usePageStore } from "./PageStore.jsx";
 import logo from "./flamingtext_com-267266537.png";
+import { authenticatedFetch } from "./authFetch.jsx";
 
 // Configuration
-const API_BASE = import.meta.env.VITE_BACKEND_URL;
+const API_BASE = "http://127.0.0.1:8000";
 const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
 // --- DEBOUNCE HOOK (Internal for Navbar) ---
@@ -79,19 +80,20 @@ function Navbar() {
   // 2. FETCH NOTIFICATIONS
   // ---------------------------------------------
   const fetchNotifications = async () => {
-    if (!uid || !token) return;
-    try {
-      const res = await fetch(`${API_BASE}/notifications/?lang=${lang}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const json = await res.json();
-      if (json.status) {
-        setNotifications(json.data || []);
+      if (!uid) return;
+
+      try {
+        const res = await authenticatedFetch(`/notifications/?lang=${lang}`);
+        const json = await res.json();
+
+        if (json.status) {
+          setNotifications(json.data || []);
+        }
+      } catch (err) {
+        console.error("Notification fetch failed:", err);
       }
-    } catch (err) {
-      console.error("Notif fetch error", err);
-    }
-  };
+    };
+
 
   useEffect(() => {
     fetchNotifications();
@@ -101,21 +103,24 @@ function Navbar() {
   }, [uid, token, lang]);
 
   const deleteNotification = async (id, e) => {
-    e.stopPropagation(); // Prevent closing dropdown
-    try {
-      const res = await fetch(`${API_BASE}/notification/delete/${id}/?lang=${lang}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const json = await res.json();
-      if (json.status) {
-        // Remove from local state immediately
-        setNotifications(prev => prev.filter(n => n._id !== id));
+      e.stopPropagation();
+
+      try {
+        const res = await authenticatedFetch(
+          `/notification/delete/${id}/?lang=${lang}`,
+          { method: "DELETE" }
+        );
+
+        const json = await res.json();
+
+        if (json.status) {
+          setNotifications(prev => prev.filter(n => n._id !== id));
+        }
+      } catch (err) {
+        console.error("Delete failed:", err);
       }
-    } catch (err) {
-      console.error("Delete error", err);
-    }
-  };
+    };
+
 
   // ---------------------------------------------
   // 3. SEARCH API & SUGGESTION LOGIC
@@ -159,10 +164,15 @@ function Navbar() {
     setShowCitySuggest(false);
     navigate(`/results?category=${encodeURIComponent(cat)}&city=${encodeURIComponent(city)}`);
   };
+  useEffect(() => {
+  const token = localStorage.getItem("ACCESS_TOKEN");
+      if (!token && uid) {
+        localStorage.clear();
+        window.location.href = "/login";
+      }
+    }, []);
 
-  // ---------------------------------------------
-  // 4. IMAGE LOADING & CLICKS
-  // ---------------------------------------------
+
   useEffect(() => {
     if (!uid) return;
     const storedPath = localStorage.getItem("PROFILE_IMAGE");
@@ -226,11 +236,14 @@ function Navbar() {
       setUploading(true);
       const fd = new FormData();
       fd.append("file", slideFile);
-      const res = await fetch(`${API_BASE}/profile/upload/image/`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
+      const res = await authenticatedFetch(
+          `/profile/upload/image/`,
+          {
+            method: "POST",
+            body: fd,
+          }
+        );
+
       const data = await res.json();
       if (res.ok && data.profile_image) {
         localStorage.setItem("PROFILE_IMAGE", data.profile_image);
@@ -301,7 +314,7 @@ function Navbar() {
         .nav-suggestion-item:hover { background: #eef8ff; color: #007bff; }
 
         /* NAV ITEMS */
-        .nav-link-container { display: flex; gap: 20px; }
+        .nav-link-container { display: flex; gap: 20px; font-family: "Noto Sans Tamil"; }
         .nav-item-custom { cursor: pointer; display: flex; flex-direction: column; align-items: center; padding: 5px 8px; border-radius: 8px; color: #555; font-weight: 500; text-shadow: ${isHomePage ? '0 1px 2px rgba(255,255,255,0.8)' : 'none'}; }
         .nav-item-custom:hover { background-color: rgba(0, 123, 255, 0.1); color: #007bff; }
         .nav-item-custom.active-nav { color: #007bff; border-bottom: 3px solid #007bff; padding-bottom: 2px; }
@@ -313,7 +326,7 @@ function Navbar() {
         .lang-switcher-btn.active-lang { background-color: #007bff !important; color: white !important; }
 
         .profile-container { position: relative; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; text-shadow: ${isHomePage ? '0 1px 2px rgba(255,255,255,0.8)' : 'none'}; }
-        .profile-dropdown-menu { position: absolute; top: 135%; right: 0; background: white; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.12); min-width: 160px; z-index: 1050; animation: fadeIn 0.2s ease-in-out; }
+        .profile-dropdown-menu { position: absolute; top: 135%; right: 0; background: white; border: 1px solid #e0e0e0; border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,0.12); min-width: 160px; z-index: 1050; animation: fadeIn 0.2s ease-in-out; font-family: "Noto Sans Tamil"; }
         .dropdown-item-custom { padding: 12px 16px; font-size: 13px; color: #333; border-bottom: 1px solid #f0f0f0; transition: background 0.2s; cursor: pointer; text-align: left; }
         .dropdown-item-custom:hover { background-color: #f8f9fa; color: #007bff; }
 
@@ -476,9 +489,18 @@ function Navbar() {
                 <div style={{ fontSize: 10, color: '#007bff', fontWeight: 'bold' }}>{firstName}</div>
                 {showDropdown && (
                   <div className="profile-dropdown-menu">
-                    <div className="dropdown-item-custom" onClick={(e) => { e.stopPropagation(); setShowDropdown(false); setShowSlide(true); }}>Profile</div>
-                    <div className="dropdown-item-custom" onClick={(e) => { e.stopPropagation(); setShowDropdown(false); navGo("/dashboard"); }}>Dashboard</div>
-                    <div className="dropdown-item-custom" onClick={handleLogout} style={{color:'#dc3545', fontWeight:'bold'}}>Logout</div>
+                    <div className="dropdown-item-custom" onClick={(e) => { e.stopPropagation(); setShowDropdown(false); setShowSlide(true); }}>{t("Profile")}</div>
+                    <div className="dropdown-item-custom" onClick={(e) => { e.stopPropagation(); setShowDropdown(false); navGo("/dashboard"); }}>{t("Dashboard")}</div>
+                    <div className="dropdown-item-custom"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowDropdown(false);
+                                    navGo("/settings");
+                                  }}>
+                                  {t("Settings")}
+                                </div>
+
+                    <div className="dropdown-item-custom" onClick={handleLogout} style={{color:'#dc3545', fontWeight:'bold'}}>{t("Logout")}</div>
                   </div>
                 )}
               </div>
