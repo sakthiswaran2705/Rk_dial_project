@@ -5,18 +5,36 @@ import hashlib, base64
 import os, uuid
 from pydantic import BaseModel
 from api.common_urldb import db
+
+# Ensure this path matches your project structure
 from api.email_sender import send_email
-from api.auth_jwt import (
+
+from auth_jwt import (
     create_access_token,
     create_refresh_token,
     verify_token,
     verify_refresh_token,
 )
+from payments import check_shop_limit, check_offer_limit
 
 # --- TRANSLATOR SYSTEM HELPERS ---
-from api.translator import ta_to_en, en_to_ta
-from api.cache import get_cached, set_cache
+from translator import ta_to_en, en_to_ta
+from cache import get_cached, set_cache
 
+# --- ROUTER AND COLLECTIONS ---
+router = APIRouter()
+col_user = db["user"]
+col_shop = db["shop"]
+col_city = db["city"]
+col_category = db["category"]
+col_offers = db["offers"]
+col_jobs = db["jobs"]
+col_notifications = db["notifications"]
+
+
+# ==========================================
+#        HELPER FUNCTIONS
+# ==========================================
 
 def safe(obj):
     if isinstance(obj, ObjectId):
@@ -29,6 +47,7 @@ def safe(obj):
         return {k: safe(v) for k, v in obj.items()}
     return obj
 
+
 # PHONETIC MAP FOR SMALL LETTERS
 PHONETIC_MAP = {
     "a": "ஏ", "b": "பி", "c": "சி", "d": "டி",
@@ -40,13 +59,28 @@ PHONETIC_MAP = {
     "x": "எக்ஸ்", "y": "வை", "z": "ஸெட்"
 }
 
-# Pre-defined set for O(1) skip-key lookups
 SKIP_KEYS = {
     "_id", "user_id", "shop_id", "city_id", "offer_id",
     "phone_number", "phonenumber", "email", "created_at",
     "uploaded_at", "start_date", "end_date", "photos",
-    "file_base64", "file_b64", "pincode", "fee", "percentage"
+    "pincode", "fee", "percentage"
 }
+
+
+def create_notification(user_id, notif_type: str, title: str, message: str, related_id: str = None):
+
+    try:
+        col_notifications.insert_one({
+            "user_id": ObjectId(user_id),
+            "type": notif_type,
+            "title": title,
+            "message": message,
+            "related_id": str(related_id) if related_id else None,
+            "is_read": False,
+            "created_at": datetime.utcnow()
+        })
+    except Exception as e:
+        print(f"Notification Error: {e}")
 
 
 def apply_phonetic_fallback(text: str) -> str:
@@ -60,7 +94,6 @@ def apply_phonetic_fallback(text: str) -> str:
 
 
 def translate_to_en_logic(text: str) -> str:
-    """Translates Tamil to English for DB storage."""
     if not text or not isinstance(text, str) or text.strip() == "":
         return text
     if text.replace(" ", "").isdigit():
@@ -78,18 +111,14 @@ def translate_to_en_logic(text: str) -> str:
 
 
 def translate_to_ta_logic(text: str) -> str:
-    """Translates English to Tamil for Response with Phonetic Fallback."""
     if not text or not isinstance(text, str) or text.strip() == "":
         return text
     if text.replace(" ", "").isdigit():
         return text
     cached = get_cached(text)
     if cached: return cached
-
-    # Fast bypass for small codes
     if len(text) <= 3 and text.isalpha():
         return apply_phonetic_fallback(text)
-
     try:
         translated = en_to_ta(text)
         if translated and translated.lower() != text.lower():
@@ -101,7 +130,6 @@ def translate_to_ta_logic(text: str) -> str:
 
 
 def translate_response_data(data, lang: str):
-    """Recursively translates nested data using fast lookups."""
     if lang != "ta": return data
     if isinstance(data, list):
         return [translate_response_data(item, lang) for item in data]
@@ -115,19 +143,16 @@ def translate_response_data(data, lang: str):
     return data
 
 
-# --- ROUTER AND COLLECTIONS ---
-router = APIRouter()
-col_user, col_shop, col_city, col_category, col_offers = db["user"], db["shop"], db["city"], db["category"], db[
-    "offers"]
-
-
 def hash_password(pwd): return hashlib.sha256(pwd.encode()).hexdigest()
 
 
 def oid(x): return str(x) if isinstance(x, ObjectId) else x
 
 
-# REGISTER
+
+#        AUTH & PROFILE
+
+
 @router.post("/register/", operation_id="registerUser")
 def register(firstname: str = Form(None), lastname: str = Form(None), email: str = Form(None), phone: str = Form(None),
              password: str = Form(...)):
@@ -141,12 +166,14 @@ def register(firstname: str = Form(None), lastname: str = Form(None), email: str
 
     user_id = col_user.insert_one({
         "password": hash_password(password), "firstname": firstname, "lastname": lastname,
-        "email": email, "phonenumber": phone, "created_at": datetime.utcnow()
+        "email": email, "phonenumber": phone, "created_at": datetime.utcnow(), "notification_settings": {
+            "email": True,
+            "push": True
+        }
     }).inserted_id
     return {"status": True, "user_id": str(user_id), "message": "Registered successfully"}
 
 
-# LOGIN
 @router.post("/login/", operation_id="loginUser")
 def login(emailorphone: str = Form(...), password: str = Form(...)):
     identifier = emailorphone.strip().lower()
@@ -182,7 +209,6 @@ def login(emailorphone: str = Form(...), password: str = Form(...)):
     }
 
 
-# REFRESH
 @router.post("/refresh/", operation_id="refreshToken")
 def refresh_token_api(data: dict = Body(...)):
     refresh_token = data.get("refresh_token")
@@ -191,20 +217,19 @@ def refresh_token_api(data: dict = Body(...)):
     return {"status": True, "access_token": create_access_token({"user_id": user_id})}
 
 
-
-
 UPLOAD_DIR = "media/profiles"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+
 @router.post("/profile/upload/image/")
 def upload_profile_image(
-    file: UploadFile = File(...),
-    user_id: str = Depends(verify_token)
+        file: UploadFile = File(...),
+        user_id: str = Depends(verify_token)
 ):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Only image files allowed")
 
-    user = db.user.find_one({"_id": ObjectId(user_id)})
+    user = col_user.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -222,19 +247,16 @@ def upload_profile_image(
     with open(path, "wb") as f:
         f.write(file.file.read())
 
-    db.user.update_one(
+    col_user.update_one(
         {"_id": ObjectId(user_id)},
         {"$set": {"profile_image": path}}
     )
 
-    return {
-        "success": True,
-        "profile_image": path
-    }
+    return {"success": True, "profile_image": path}
 
 
+#SEARCH APIs
 
-# CATEGORY SEARCH
 @router.get("/category/search/", operation_id="searchCategory")
 def search_category(category: str = Query(""), lang: str = Query("en")):
     search_term = translate_to_en_logic(category) if lang == "ta" else category
@@ -248,7 +270,6 @@ def search_category(category: str = Query(""), lang: str = Query("en")):
     return {"status": "success", "message": msg, "data": results}
 
 
-# CITY SEARCH
 @router.get("/city/search/", operation_id="searchCity")
 def search_city(city_name: str = Query(""), lang: str = Query("en")):
     search_term = translate_to_en_logic(city_name) if lang == "ta" else city_name
@@ -265,36 +286,37 @@ def search_city(city_name: str = Query(""), lang: str = Query("en")):
     return {"status": "success", "message": msg, "data": results}
 
 
+
+#        SHOP MODULE
+
 MEDIA_BASE = "media/shop"
-# ADD SHOP
+
+
 @router.post("/shop/add/", operation_id="addShop")
 def add_shop(
-    user_id: str = Depends(verify_token),
-
-    shop_name: str = Form(...),
-    description: str = Form(...),
-    address: str = Form(...),
-    phone_number: str = Form(...),
-    email: str = Form(...),
-    landmark: str = Form(...),
-
-    category_list: str = Form(...),
-    city_id: str = Form(...),
-
-    media: list[UploadFile] = File(None),     # multiple images
-    main_image: UploadFile = File(None),      # ⭐ single main image
-    keywords: str = Form(...),
-
-    lang: str = Query("en")
+        background_tasks: BackgroundTasks,  # <--- REQUIRED FOR ASYNC EMAIL
+        user_id: str = Depends(verify_token),
+        shop_name: str = Form(...),
+        description: str = Form(...),
+        address: str = Form(...),
+        phone_number: str = Form(...),
+        email: str = Form(...),
+        landmark: str = Form(...),
+        category_list: str = Form(...),
+        city_id: str = Form(...),
+        media: list[UploadFile] = File(None),
+        main_image: UploadFile = File(None),
+        keywords: str = Form(...),
+        lang: str = Query("en")
 ):
-    # ---------- USER ----------
+    # 1. LIMIT CHECK
     try:
-        u_oid = ObjectId(user_id)
-    except:
-        msg = "Invalid user id"
+        check_shop_limit(user_id)
+    except HTTPException as e:
+        msg = e.detail
         return {"status": "error", "message": en_to_ta(msg) if lang == "ta" else msg}
 
-    # ---------- TRANSLATE ----------
+    # 2. TRANSLATION & VALIDATION
     if lang == "ta":
         shop_name = ta_to_en(shop_name)
         description = ta_to_en(description)
@@ -302,36 +324,24 @@ def add_shop(
         landmark = ta_to_en(landmark)
         keywords = ta_to_en(keywords)
 
-    # ---------- CITY ----------
     try:
         city_oid = ObjectId(city_id)
     except:
-        msg = "Invalid city"
-        return {"status": "error", "message": en_to_ta(msg) if lang == "ta" else msg}
+        return {"status": "error", "message": "Invalid city ID"}
 
     if not col_city.find_one({"_id": city_oid}, {"_id": 1}):
-        msg = "City not found"
-        return {"status": "error", "message": en_to_ta(msg) if lang == "ta" else msg}
+        return {"status": "error", "message": "City not found"}
 
-    # ---------- CATEGORY ----------
     cat_ids = []
     for raw in category_list.split(","):
         name = raw.strip()
-        if not name:
-            continue
-
+        if not name: continue
         db_name = ta_to_en(name) if lang == "ta" else name
-        cat = col_category.find_one(
-            {"name": {"$regex": f"^{db_name}$", "$options": "i"}},
-            {"_id": 1}
-        )
-        if not cat:
-            msg = f"Category '{name}' not found"
-            return {"status": "error", "message": en_to_ta(msg) if lang == "ta" else msg}
-
+        cat = col_category.find_one({"name": {"$regex": f"^{db_name}$", "$options": "i"}}, {"_id": 1})
+        if not cat: return {"status": "error", "message": f"Category '{name}' not found"}
         cat_ids.append(str(cat["_id"]))
 
-    # ---------- INSERT SHOP ----------
+    # 3. INSERT SHOP
     inserted = col_shop.insert_one({
         "shop_name": shop_name,
         "description": description,
@@ -339,93 +349,96 @@ def add_shop(
         "phone_number": phone_number,
         "email": email,
         "landmark": landmark,
-
         "category": cat_ids,
         "city_id": str(city_oid),
-
         "media": [],
         "main_image": None,
         "keywords": [k.strip() for k in keywords.split(",") if k.strip()],
-
-        "user_id": u_oid,
+        "user_id": user_id,
         "created_at": datetime.utcnow(),
         "status": "pending"
     })
-
     shop_id = str(inserted.inserted_id)
 
+    # 4. HANDLE IMAGES
     update_data = {}
-
-    # ---------- SAVE MAIN IMAGE ----------
     if main_image:
         main_dir = os.path.join(MEDIA_BASE, shop_id, "main")
         os.makedirs(main_dir, exist_ok=True)
-
         ext = main_image.filename.split(".")[-1]
         fname = f"{uuid.uuid4()}.{ext}"
         full_path = os.path.join(main_dir, fname)
-
         with open(full_path, "wb") as f:
             f.write(main_image.file.read())
-
         update_data["main_image"] = f"{MEDIA_BASE}/{shop_id}/main/{fname}"
 
-    # ---------- SAVE MEDIA IMAGES ----------
     media_items = []
-
     if media:
         img_dir = os.path.join(MEDIA_BASE, shop_id, "images")
         os.makedirs(img_dir, exist_ok=True)
-
         for f in media:
-            if not f.content_type.startswith("image"):
-                continue
-
+            if not f.content_type.startswith("image"): continue
             ext = f.filename.split(".")[-1]
             fname = f"{uuid.uuid4()}.{ext}"
             full_path = os.path.join(img_dir, fname)
-
             with open(full_path, "wb") as img:
                 img.write(f.file.read())
+            media_items.append({"type": "image", "path": f"{MEDIA_BASE}/{shop_id}/images/{fname}"})
 
-            media_items.append({
-                "type": "image",
-                "path": f"{MEDIA_BASE}/{shop_id}/images/{fname}"
-            })
+    if media_items: update_data["media"] = media_items
+    if update_data: col_shop.update_one({"_id": ObjectId(shop_id)}, {"$set": update_data})
 
-    if media_items:
-        update_data["media"] = media_items
+    # 5. CREATE NOTIFICATION
+    create_notification(
+        user_id=user_id,
+        notif_type="shop_created",
+        title="Shop Created",
+        message=f"Your shop '{shop_name}' has been created and is pending approval.",
+        related_id=shop_id
+    )
 
-    # ---------- UPDATE MEDIA DATA ----------
-    if update_data:
-        col_shop.update_one(
-            {"_id": ObjectId(shop_id)},
-            {"$set": update_data}
-        )
+    # 6. SEND ADMIN EMAIL (BACKGROUND TASK)
+    def send_admin_email_task():
+        approve_link = f"http://127.0.0.1:8000/admin/approve?shop_id={shop_id}"
+        subject = f"New Shop Approval Request: {shop_name}"
 
-    # ---------- ADMIN EMAIL ----------
-    try:
-        approve_link = f"http://127.0.0.1:8000/admin?shop_id={shop_id}"
-        subject = "New Shop Approval Request"
-
+        # HTML BODY WITH APPROVE BUTTON
         body = f"""
-        <h3>New Shop Pending Approval</h3>
-        <p><b>Shop Name:</b> {shop_name}</p>
-        <p><b>Email:</b> {email}</p>
-        <p><b>Phone:</b> {phone_number}</p>
-        <a href="{approve_link}"
-           style="padding:10px 18px;
-           background:#28a745;color:white;
-           text-decoration:none;border-radius:6px;">
-           APPROVE SHOP
-        </a>
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+                <h2 style="color: #2c3e50; text-align: center;">New Shop Approval Needed</h2>
+                <hr style="border: 0; border-top: 1px solid #eee;">
+
+                <p><strong>Shop Name:</strong> {shop_name}</p>
+                <p><strong>Owner Email:</strong> {email}</p>
+                <p><strong>Phone:</strong> {phone_number}</p>
+                <p><strong>Location:</strong> {address}</p>
+
+                <div style="text-align: center; margin-top: 30px; margin-bottom: 30px;">
+                    <a href="{approve_link}" 
+                       style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+                       ✅ APPROVE SHOP
+                    </a>
+                </div>
+
+                <p style="font-size: 12px; color: #888; text-align: center;">
+                    If the button doesn't work, copy this link:<br>
+                    {approve_link}
+                </p>
+            </div>
+        </body>
+        </html>
         """
+        try:
+            # Change to your Admin Email
+            send_email("sakthibala2705@gmail.com", subject, body)
+            print("DEBUG: Admin email task finished.")
+        except Exception as e:
+            print(f"DEBUG: Email sending error: {e}")
 
-        send_email("sakthibala2705@gmail.com", subject, body)
-    except:
-        pass
+    background_tasks.add_task(send_admin_email_task)
 
-    # ---------- RESPONSE ----------
     msg = "Shop submitted. Waiting for admin approval."
     return {
         "status": "success",
@@ -434,30 +447,24 @@ def add_shop(
     }
 
 
-# UPDATE SHOP
 @router.post("/shop/update/{shop_id}/", operation_id="updateShop")
 def update_shop(
-    user_id: str = Depends(verify_token),
-    shop_id: str = "",
-
-    shop_name: str = Form(None),
-    description: str = Form(None),
-    address: str = Form(None),
-    phone_number: str = Form(None),
-    email: str = Form(None),
-    landmark: str = Form(None),
-
-    category_list: str = Form(None),
-    city_id: str = Form(None),
-    keywords: str = Form(None),
-
-    media: list[UploadFile] = File(None),
-    main_image: UploadFile = File(None),
-
-    delete_media: str = Form(None),   # ⭐ NEW
-    lang: str = Query("en")
+        user_id: str = Depends(verify_token),
+        shop_id: str = "",
+        shop_name: str = Form(None),
+        description: str = Form(None),
+        address: str = Form(None),
+        phone_number: str = Form(None),
+        email: str = Form(None),
+        landmark: str = Form(None),
+        category_list: str = Form(None),
+        city_id: str = Form(None),
+        keywords: str = Form(None),
+        media: list[UploadFile] = File(None),
+        main_image: UploadFile = File(None),
+        delete_media: str = Form(None),
+        lang: str = Query("en")
 ):
-    # ---------- SHOP ID ----------
     try:
         soid = ObjectId(shop_id)
     except:
@@ -468,54 +475,36 @@ def update_shop(
         return {"status": "error", "message": "Shop not found"}
 
     update = {}
+    if shop_name: update["shop_name"] = ta_to_en(shop_name) if lang == "ta" else shop_name
+    if description: update["description"] = ta_to_en(description) if lang == "ta" else description
+    if address: update["address"] = ta_to_en(address) if lang == "ta" else address
+    if phone_number: update["phone_number"] = phone_number
+    if email: update["email"] = email
+    if landmark: update["landmark"] = ta_to_en(landmark) if lang == "ta" else landmark
 
-    # ---------- BASIC ----------
-    if shop_name:
-        update["shop_name"] = ta_to_en(shop_name) if lang == "ta" else shop_name
-    if description:
-        update["description"] = ta_to_en(description) if lang == "ta" else description
-    if address:
-        update["address"] = ta_to_en(address) if lang == "ta" else address
-    if phone_number:
-        update["phone_number"] = phone_number
-    if email:
-        update["email"] = email
-    if landmark:
-        update["landmark"] = ta_to_en(landmark) if lang == "ta" else landmark
-
-    # ---------- KEYWORDS ----------
     if keywords:
         k = ta_to_en(keywords) if lang == "ta" else keywords
         update["keywords"] = [i.strip() for i in k.split(",") if i.strip()]
 
-    # ---------- MAIN IMAGE ----------
     if main_image:
         img_dir = os.path.join(MEDIA_BASE, shop_id, "main")
         os.makedirs(img_dir, exist_ok=True)
-
-        # delete old main image file
         old = shop.get("main_image")
         if old:
             try:
                 os.remove(old)
             except:
                 pass
-
         ext = main_image.filename.split(".")[-1]
         fname = f"{uuid.uuid4()}.{ext}"
         full_path = os.path.join(img_dir, fname)
-        db_path = f"{MEDIA_BASE}/{shop_id}/main/{fname}"
-
         with open(full_path, "wb") as f:
             f.write(main_image.file.read())
+        update["main_image"] = f"{MEDIA_BASE}/{shop_id}/main/{fname}"
 
-        update["main_image"] = db_path
-
-    # ---------- DELETE MEDIA ----------
     if delete_media:
         delete_paths = [p.strip() for p in delete_media.split(",") if p.strip()]
         remaining = []
-
         for m in shop.get("media", []):
             if m["path"] in delete_paths:
                 try:
@@ -524,317 +513,237 @@ def update_shop(
                     pass
             else:
                 remaining.append(m)
-
         update["media"] = remaining
 
-    # ---------- ADD MEDIA ----------
     if media:
         img_dir = os.path.join(MEDIA_BASE, shop_id, "images")
         vid_dir = os.path.join(MEDIA_BASE, shop_id, "videos")
         os.makedirs(img_dir, exist_ok=True)
         os.makedirs(vid_dir, exist_ok=True)
-
         current = update.get("media", shop.get("media", []))
-
         for f in media:
             ext = f.filename.split(".")[-1]
             fname = f"{uuid.uuid4()}.{ext}"
-
             if f.content_type.startswith("image"):
                 full = os.path.join(img_dir, fname)
                 dbp = f"{MEDIA_BASE}/{shop_id}/images/{fname}"
                 typ = "image"
-
             elif f.content_type.startswith("video"):
                 full = os.path.join(vid_dir, fname)
                 dbp = f"{MEDIA_BASE}/{shop_id}/videos/{fname}"
                 typ = "video"
             else:
                 continue
-
             with open(full, "wb") as file:
                 file.write(f.file.read())
-
             current.append({"type": typ, "path": dbp})
-
         update["media"] = current
 
-    # ---------- UPDATE ----------
     if update:
         col_shop.update_one({"_id": soid}, {"$set": update})
+        create_notification(user_id, "shop_updated", "Shop Updated", f"Shop '{shop.get('shop_name')}' updated.",
+                            shop_id)
 
     return {"status": "success", "message": "Shop updated successfully"}
 
-# DELETE SHOP
+
 @router.delete("/shop/delete/{shop_id}/", operation_id="deleteShop")
 def delete_shop(shop_id: str, user_id: str = Depends(verify_token), lang: str = Query("en")):
     try:
         res = col_shop.delete_one({"_id": ObjectId(shop_id)})
         if res.deleted_count == 0: return {"status": "error", "message": "Shop not found"}
+        create_notification(user_id, "shop_deleted", "Shop Deleted", "Shop deleted successfully.", None)
         msg = "Shop deleted successfully"
         return {"status": "success", "message": translate_to_ta_logic(msg) if lang == "ta" else msg}
     except:
         return {"status": "error", "message": "Invalid ID"}
 
 
-# GET MY SHOP
+# GET MY SHOP (ROBUST & FIXED)
 @router.get("/myshop/", operation_id="getMyShop")
 def get_my_shop(
-    user_id: str = Depends(verify_token),
-    lang: str = Query("en")
+        user_id: str = Depends(verify_token),
+        lang: str = Query("en")
 ):
-    # ---------- USER ----------
     try:
-        u_oid = ObjectId(user_id)
+        # Search for BOTH String and ObjectId to be safe
+        user_queries = [{"user_id": user_id}, {"user_id": ObjectId(user_id)}]
     except:
-        return {"status": "error", "message": "Invalid user id"}
+        user_queries = [{"user_id": user_id}]
 
-    shops = list(col_shop.find({"user_id": u_oid}))
+    shops = list(col_shop.find({"$or": user_queries}))
     final = []
 
     for s in shops:
-        # ---------- SHOP ----------
         s_clean = safe(s)
+        shop_id_str = s_clean["_id"]
+        shop_oid = s["_id"]
 
-        # ---------- CATEGORIES ----------
         categories = []
-        for cid in s.get("category", []):
+        cat_list = s.get("category", [])
+        if isinstance(cat_list, str): cat_list = cat_list.split(",")
+        for cid in cat_list:
             try:
-                cat = col_category.find_one({"_id": ObjectId(cid)})
-                if cat:
-                    categories.append(safe(cat))
+                cid_str = str(cid).strip()
+                if len(cid_str) == 24:
+                    cat = col_category.find_one({"_id": ObjectId(cid_str)})
+                    if cat: categories.append(safe(cat))
             except:
                 continue
 
-        # ---------- CITY ----------
         city_doc = None
-        if s.get("city_id"):
+        city_id = s.get("city_id")
+        if city_id:
             try:
-                city = col_city.find_one({"_id": ObjectId(s["city_id"])})
-                if city:
-                    city_doc = safe(city)
+                c_oid = ObjectId(city_id) if ObjectId.is_valid(str(city_id)) else city_id
+                city = col_city.find_one({"_id": c_oid})
+                if city: city_doc = safe(city)
             except:
                 pass
 
-        # ---------- OFFERS ----------
         offers = []
-        for doc in col_offers.find({"shop_id": s_clean["_id"]}, {"_id": 0}):
+        offer_query = {"$or": [{"shop_id": shop_id_str}, {"shop_id": shop_oid}]}
+        offer_docs = list(col_offers.find(offer_query))
+        for doc in offer_docs:
             for o in doc.get("offers", []):
-                offers.append(safe({
-                    "offer_id": o.get("offer_id"),
-                    "title": o.get("title"),
-                    "fee": o.get("fee"),
-                    "start_date": o.get("start_date"),
-                    "end_date": o.get("end_date"),
-                    "percentage": o.get("percentage"),
-                    "description": o.get("description"),
-                    "media_type": o.get("media_type"),
-                    "media_path": o.get("media_path"),
-                    "status": o.get("status"),
-                    "uploaded_at": o.get("uploaded_at")
-                }))
+                offers.append(safe(o))
 
-        # ---------- FINAL STRUCTURE ----------
         final.append({
-            "shop": {
-                **s_clean,
-                "main_image": s_clean.get("main_image"),
-                "media": s_clean.get("media", [])
-            },
+            "shop": {**s_clean, "main_image": s_clean.get("main_image"), "media": s_clean.get("media", [])},
             "categories": categories,
             "city": city_doc,
             "offers": offers
         })
 
-    clean_data = safe(final)
-    translated = translate_response_data(clean_data, lang)
-
     return {
         "status": "success",
-        "message": translate_to_ta_logic("shop get successfully")
-            if lang == "ta" else "shop get successfully",
-        "data": translated
+        "message": translate_to_ta_logic("shop get successfully") if lang == "ta" else "shop get successfully",
+        "data": translate_response_data(safe(final), lang)
     }
 
-# ADD OFFER
+
+# ==========================================
+#        OFFER MODULE
+# ==========================================
 
 @router.post("/offer/add/", operation_id="addOffer")
 async def add_offer_api(
-    background_tasks: BackgroundTasks,
-    user_id: str = Depends(verify_token),
-
-    target_shop_id: str = Form(...),
-    title: str = Form(""),
-    fee: str = Form(""),
-    start_date: str = Form(""),
-    end_date: str = Form(""),
-    percentage: str = Form(""),
-    description: str = Form(""),
-
-    file: UploadFile = File(...),
-    lang: str = Query("en")
+        background_tasks: BackgroundTasks,  # <--- REQUIRED
+        user_id: str = Depends(verify_token),
+        target_shop_id: str = Form(...),
+        title: str = Form(""),
+        fee: str = Form(""),
+        start_date: str = Form(""),
+        end_date: str = Form(""),
+        percentage: str = Form(""),
+        description: str = Form(""),
+        file: UploadFile = File(...),
+        lang: str = Query("en")
 ):
-    # ---------- TRANSLATE ----------
+    try:
+        check_offer_limit(user_id)
+    except HTTPException as e:
+        return {"status": False, "message": translate_to_ta_logic(e.detail) if lang == "ta" else e.detail}
+
     if lang == "ta":
         title = translate_to_en_logic(title)
         description = translate_to_en_logic(description)
 
     u_oid = ObjectId(user_id)
+    shop_ids = [str(s["_id"]) for s in col_shop.find({"user_id": u_oid}, {"_id": 1})] if target_shop_id == "ALL" else [
+        target_shop_id]
+    if not shop_ids: return {"status": False, "message": "No shops found"}
 
-    # ---------- SHOP IDS ----------
-    shop_ids = (
-        [str(s["_id"]) for s in col_shop.find({"user_id": u_oid}, {"_id": 1})]
-        if target_shop_id == "ALL"
-        else [target_shop_id]
-    )
-
-    if not shop_ids:
-        return {"status": False, "message": "No shops found"}
-
-    # ---------- FILE TYPE ----------
     if file.content_type.startswith("image"):
-        media_type = "image"
-        folder = "images"
+        media_type, folder = "image", "images"
     elif file.content_type.startswith("video"):
-        media_type = "video"
-        folder = "videos"
+        media_type, folder = "video", "videos"
     else:
         return {"status": False, "message": "Invalid file type"}
 
-    # ---------- OFFER ID ----------
     offer_id = str(ObjectId())
+    file_content = await file.read()
 
-    # ---------- SAVE FILE FOR EACH SHOP ----------
     for shop_id in shop_ids:
         save_dir = os.path.join(MEDIA_BASE, shop_id, "offers", folder)
         os.makedirs(save_dir, exist_ok=True)
-
         ext = file.filename.split(".")[-1]
         filename = f"{offer_id}.{ext}"
         full_path = os.path.join(save_dir, filename)
-
         with open(full_path, "wb") as f:
-            f.write(await file.read())
-
-        media_path = f"{MEDIA_BASE}/{shop_id}/offers/{folder}/{filename}"
+            f.write(file_content)
 
         offer_obj = {
             "offer_id": offer_id,
             "media_type": media_type,
-            "media_path": media_path,
+            "media_path": f"{MEDIA_BASE}/{shop_id}/offers/{folder}/{filename}",
             "filename": filename,
-
-            "title": title,
-            "fee": fee,
-            "start_date": start_date,
-            "end_date": end_date,
-            "percentage": percentage,
-            "description": description,
-
-            "uploaded_at": datetime.utcnow(),
-            "status": "pending"
+            "title": title, "fee": fee, "start_date": start_date, "end_date": end_date,
+            "percentage": percentage, "description": description,
+            "uploaded_at": datetime.utcnow(), "status": "pending"
         }
 
         if col_offers.find_one({"shop_id": shop_id}, {"_id": 1}):
-            col_offers.update_one(
-                {"shop_id": shop_id},
-                {"$push": {"offers": offer_obj}}
-            )
+            col_offers.update_one({"shop_id": shop_id}, {"$push": {"offers": offer_obj}})
         else:
-            col_offers.insert_one({
-                "shop_id": shop_id,
-                "user_id": user_id,
-                "offers": [offer_obj],
-                "status": "pending",
-                "created_at": datetime.utcnow()
-            })
+            col_offers.insert_one({"shop_id": shop_id, "user_id": user_id, "offers": [offer_obj], "status": "pending",
+                                   "created_at": datetime.utcnow()})
 
-    # ---------- EMAIL (BACKGROUND) ----------
-    background_tasks.add_task(
-        send_email,
-        "sakthibala2705@gmail.com",
-        "New Offer",
-        f"New offer '{title}' added."
-    )
+    create_notification(user_id, "offer_created", "Offer Created", f"Offer '{title}' added.", offer_id)
 
-    return {
-        "status": True,
-        "message": translate_to_ta_logic("Offer added successfully")
-        if lang == "ta" else "Offer added successfully"
-    }
+    # EMAIL IN BACKGROUND
+    background_tasks.add_task(send_email, "sakthibala2705@gmail.com", "New Offer", f"New offer '{title}' added.")
 
-# UPDATE OFFER
+    return {"status": True, "message": translate_to_ta_logic(
+        "Offer added successfully") if lang == "ta" else "Offer added successfully"}
+
+
 @router.post("/offer/update/", operation_id="updateOffer")
 async def update_offer_api(
-    user_id: str = Depends(verify_token),
-
-    offer_id: str = Form(...),
-    shop_id: str = Form(...),
-
-    title: str = Form(""),
-    fee: str = Form(""),
-    start_date: str = Form(""),
-    end_date: str = Form(""),
-    percentage: str = Form(""),
-    description: str = Form(""),
-
-    file: UploadFile = File(None),
-    lang: str = Query("en")
+        user_id: str = Depends(verify_token),
+        offer_id: str = Form(...),
+        shop_id: str = Form(...),
+        title: str = Form(""),
+        fee: str = Form(""),
+        start_date: str = Form(""),
+        end_date: str = Form(""),
+        percentage: str = Form(""),
+        description: str = Form(""),
+        file: UploadFile = File(None),
+        lang: str = Query("en")
 ):
-    # ---------- TRANSLATE ----------
     if lang == "ta":
         title = translate_to_en_logic(title)
         description = translate_to_en_logic(description)
 
-    # ---------- FIND OFFER ----------
     doc = col_offers.find_one({"shop_id": shop_id})
-    if not doc:
-        return {"status": False, "message": "Offer not found"}
-
+    if not doc: return {"status": False, "message": "Offer not found"}
     offers = doc.get("offers", [])
     target = next((o for o in offers if o["offer_id"] == offer_id), None)
+    if not target: return {"status": False, "message": "Offer not found"}
 
-    if not target:
-        return {"status": False, "message": "Offer not found"}
+    target.update({"title": title, "fee": fee, "start_date": start_date, "end_date": end_date, "percentage": percentage,
+                   "description": description})
 
-    # ---------- UPDATE TEXT FIELDS ----------
-    target.update({
-        "title": title,
-        "fee": fee,
-        "start_date": start_date,
-        "end_date": end_date,
-        "percentage": percentage,
-        "description": description
-    })
-
-    # ---------- FILE UPDATE (OPTIONAL) ----------
     if file:
-        # 🔥 delete old file
         old_path = target.get("media_path")
         if old_path and os.path.exists(old_path):
             try:
                 os.remove(old_path)
             except:
                 pass
-
-        # detect type
         if file.content_type.startswith("image"):
-            folder = "images"
-            media_type = "image"
+            folder, media_type = "images", "image"
         elif file.content_type.startswith("video"):
-            folder = "videos"
-            media_type = "video"
+            folder, media_type = "videos", "video"
         else:
             return {"status": False, "message": "Invalid file type"}
 
-        # save new file
         ext = file.filename.split(".")[-1]
         filename = f"{offer_id}.{ext}"
         save_dir = os.path.join(MEDIA_BASE, shop_id, "offers", folder)
         os.makedirs(save_dir, exist_ok=True)
-
-        full_path = os.path.join(save_dir, filename)
-        with open(full_path, "wb") as f:
+        with open(os.path.join(save_dir, filename), "wb") as f:
             f.write(await file.read())
 
         target.update({
@@ -844,87 +753,59 @@ async def update_offer_api(
             "uploaded_at": datetime.utcnow()
         })
 
-    # ---------- SAVE ----------
-    col_offers.update_one(
-        {"shop_id": shop_id},
-        {"$set": {"offers": offers}}
-    )
+    col_offers.update_one({"shop_id": shop_id}, {"$set": {"offers": offers}})
+    create_notification(user_id, "offer_updated", "Offer Updated", f"Offer '{title}' updated.", offer_id)
 
-    return {
-        "status": True,
-        "message": translate_to_ta_logic("Offer updated successfully")
-        if lang == "ta" else "Offer updated successfully"
-    }
+    return {"status": True, "message": translate_to_ta_logic(
+        "Offer updated successfully") if lang == "ta" else "Offer updated successfully"}
 
 
-# DELETE OFFER
 @router.delete("/delete/offer/", operation_id="deleteOffer")
 def delete_offer(user_id: str = Depends(verify_token), offer_id: str = Query(...), lang: str = Query("en")):
     try:
         if col_offers.delete_one({"_id": ObjectId(offer_id)}).deleted_count > 0:
+            create_notification(user_id, "offer_deleted", "Offer Deleted", "Offer removed.", None)
             return {"status": "success",
                     "message": translate_to_ta_logic("Offer removed") if lang == "ta" else "Offer removed"}
     except:
         pass
+
     doc = col_offers.find_one({"offers.offer_id": offer_id}, {"_id": 1})
     if doc:
         col_offers.update_one({"_id": doc["_id"]}, {"$pull": {"offers": {"offer_id": offer_id}}})
+        create_notification(user_id, "offer_deleted", "Offer Deleted", "Offer removed.", None)
         return {"status": "success",
                 "message": translate_to_ta_logic("Offer removed") if lang == "ta" else "Offer removed"}
     return {"status": "error", "message": "Offer not found"}
 
 
+# ==========================================
+#        JOB MODULE
+# ==========================================
 
-
-
-
-# JOB COLLECTION
-# ===============================
-# ===============================
-# ===============================
-# JOB & NOTIFICATION COLLECTIONS
-# ===============================
-col_jobs = db["jobs"]
-col_notifications = db["notifications"]
-
-# ADD JOB
 @router.post("/job/add/", operation_id="addJob")
 def add_job(
-    user_id: str = Depends(verify_token),
-    job_title: str = Form(...),
-    job_description: str = Form(...),
-    salary: int = Form(...),
-    shop_name: str = Form(...),
-
-    # --- CONTACT FIELDS ---
-    phone_number: str = Form(...),
-    email: str = Form(...),
-    address: str = Form(...),
-
-    # --- NEW TIME FIELDS ---
-    work_start_time: str = Form(...),
-    work_end_time: str = Form(...),
-    # -----------------------
-
-    city_id: str = Form(...),
-    lang: str = Query("en")
+        user_id: str = Depends(verify_token),
+        job_title: str = Form(...),
+        job_description: str = Form(...),
+        salary: int = Form(...),
+        shop_name: str = Form(...),
+        phone_number: str = Form(...),
+        email: str = Form(...),
+        address: str = Form(...),
+        work_start_time: str = Form(...),
+        work_end_time: str = Form(...),
+        city_id: str = Form(...),
+        lang: str = Query("en")
 ):
-    # 1. Validate City
     try:
         city_oid = ObjectId(city_id)
         city = col_city.find_one({"_id": city_oid})
-        if not city:
-            raise HTTPException(status_code=404, detail="City not found")
-    except:
-        raise HTTPException(status_code=400, detail="Invalid city id")
-
-    # 2. Validate User ID
-    try:
+        if not city: raise HTTPException(status_code=404, detail="City not found")
         u_oid = ObjectId(user_id)
     except:
-        raise HTTPException(status_code=400, detail="Invalid user id")
+        raise HTTPException(status_code=400, detail="Invalid data")
 
-    # 3. Translate
     if lang == "ta":
         job_title = translate_to_en_logic(job_title)
         job_description = translate_to_en_logic(job_description)
@@ -933,232 +814,144 @@ def add_job(
         work_start_time = translate_to_en_logic(work_start_time)
         work_end_time = translate_to_en_logic(work_end_time)
 
-    # 4. Insert Job
     job_insert = col_jobs.insert_one({
-        "user_id": u_oid,
-        "job_title": job_title,
-        "job_description": job_description,
-        "salary": salary,
-        "shop_name": shop_name,
-
-        "phone_number": phone_number,
-        "email": email,
-        "address": address,
-
-        "work_start_time": work_start_time,
-        "work_end_time": work_end_time,
-
-        "city_id": city_oid,
-        "city_name": translate_to_en_logic(city.get("city_name")),
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow()
+        "user_id": u_oid, "job_title": job_title, "job_description": job_description, "salary": salary,
+        "shop_name": shop_name, "phone_number": phone_number, "email": email, "address": address,
+        "work_start_time": work_start_time, "work_end_time": work_end_time,
+        "city_id": city_oid, "city_name": translate_to_en_logic(city.get("city_name")),
+        "created_at": datetime.utcnow(), "updated_at": datetime.utcnow()
     })
 
-    # 5. SEND NOTIFICATION (To Same User)
-    col_notifications.insert_one({
-        "user_id": u_oid,
-        "type": "job_created",
-        "title": "Job Posted Successfully",
-        "message": f"Your job '{job_title}' has been posted and is now live.",
-        "related_id": str(job_insert.inserted_id),
-        "is_read": False,
-        "created_at": datetime.utcnow()
-    })
-
+    create_notification(u_oid, "job_created", "Job Posted", f"Job '{job_title}' posted.", job_insert.inserted_id)
     msg = "Job added successfully"
-    return {
-        "status": True,
-        "message": translate_to_ta_logic(msg) if lang == "ta" else msg
-    }
+    return {"status": True, "message": translate_to_ta_logic(msg) if lang == "ta" else msg}
 
 
-# UPDATE JOB
 @router.post("/job/update/{job_id}/", operation_id="updateJob")
 def update_job(
-    job_id: str,
-    user_id: str = Depends(verify_token),
-    job_title: str = Form(None),
-    job_description: str = Form(None),
-    salary: int = Form(None),
-    shop_name: str = Form(None),
-
-    phone_number: str = Form(None),
-    email: str = Form(None),
-    address: str = Form(None),
-
-    # --- NEW TIME FIELDS (Optional) ---
-    work_start_time: str = Form(None),
-    work_end_time: str = Form(None),
-    # ----------------------------------
-
-    city_id: str = Form(None),
-    lang: str = Query("en")
+        job_id: str,
+        user_id: str = Depends(verify_token),
+        job_title: str = Form(None),
+        job_description: str = Form(None),
+        salary: int = Form(None),
+        shop_name: str = Form(None),
+        phone_number: str = Form(None),
+        email: str = Form(None),
+        address: str = Form(None),
+        work_start_time: str = Form(None),
+        work_end_time: str = Form(None),
+        city_id: str = Form(None),
+        lang: str = Query("en")
 ):
     try:
-        j_oid = ObjectId(job_id)
-        u_oid = ObjectId(user_id)
+        j_oid, u_oid = ObjectId(job_id), ObjectId(user_id)
     except:
-        raise HTTPException(status_code=400, detail="Invalid ID format")
+        raise HTTPException(status_code=400, detail="Invalid ID")
 
     job = col_jobs.find_one({"_id": j_oid, "user_id": u_oid})
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found or access denied")
+    if not job: raise HTTPException(status_code=404, detail="Job not found")
 
     update = {}
-
-    if job_title:
-        update["job_title"] = translate_to_en_logic(job_title) if lang == "ta" else job_title
-    if job_description:
-        update["job_description"] = translate_to_en_logic(job_description) if lang == "ta" else job_description
-    if salary is not None:
-        update["salary"] = salary
-    if shop_name:
-        update["shop_name"] = translate_to_en_logic(shop_name) if lang == "ta" else shop_name
-
-    if phone_number:
-        update["phone_number"] = phone_number
-    if email:
-        update["email"] = email
-    if address:
-        update["address"] = translate_to_en_logic(address) if lang == "ta" else address
-
-    # Update Time
-    if work_start_time:
-        update["work_start_time"] = translate_to_en_logic(work_start_time) if lang == "ta" else work_start_time
-    if work_end_time:
-        update["work_end_time"] = translate_to_en_logic(work_end_time) if lang == "ta" else work_end_time
+    if job_title: update["job_title"] = translate_to_en_logic(job_title) if lang == "ta" else job_title
+    if job_description: update["job_description"] = translate_to_en_logic(
+        job_description) if lang == "ta" else job_description
+    if salary is not None: update["salary"] = salary
+    if shop_name: update["shop_name"] = translate_to_en_logic(shop_name) if lang == "ta" else shop_name
+    if phone_number: update["phone_number"] = phone_number
+    if email: update["email"] = email
+    if address: update["address"] = translate_to_en_logic(address) if lang == "ta" else address
+    if work_start_time: update["work_start_time"] = translate_to_en_logic(
+        work_start_time) if lang == "ta" else work_start_time
+    if work_end_time: update["work_end_time"] = translate_to_en_logic(work_end_time) if lang == "ta" else work_end_time
 
     if city_id:
         try:
-            city_oid = ObjectId(city_id)
-            city = col_city.find_one({"_id": city_oid})
+            c_oid = ObjectId(city_id)
+            city = col_city.find_one({"_id": c_oid})
             if city:
-                update["city_id"] = city_oid
+                update["city_id"] = c_oid
                 update["city_name"] = translate_to_en_logic(city.get("city_name"))
         except:
             pass
 
     update["updated_at"] = datetime.utcnow()
-
     col_jobs.update_one({"_id": j_oid}, {"$set": update})
+    create_notification(u_oid, "job_updated", "Job Updated", "Job details updated.", job_id)
 
-    msg = "Job updated successfully"
-    return {
-        "status": True,
-        "message": translate_to_ta_logic(msg) if lang == "ta" else msg
-    }
+    return {"status": True, "message": translate_to_ta_logic(
+        "Job updated successfully") if lang == "ta" else "Job updated successfully"}
 
 
-# DELETE JOB
 @router.delete("/job/delete/{job_id}/", operation_id="deleteJob")
-def delete_job(
-    job_id: str,
-    user_id: str = Depends(verify_token),
-    lang: str = Query("en")
-):
+def delete_job(job_id: str, user_id: str = Depends(verify_token), lang: str = Query("en")):
     try:
-        j_oid = ObjectId(job_id)
-        u_oid = ObjectId(user_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid ID format")
-
-    res = col_jobs.delete_one({"_id": j_oid, "user_id": u_oid})
-
-    if res.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Job not found or access denied")
-
-    msg = "Job deleted successfully"
-    return {
-        "status": True,
-        "message": translate_to_ta_logic(msg) if lang == "ta" else msg
-    }
+        j_oid, u_oid = ObjectId(job_id), ObjectId(user_id)
+        if col_jobs.delete_one({"_id": j_oid, "user_id": u_oid}).deleted_count > 0:
+            create_notification(u_oid, "job_deleted", "Job Deleted", "Job removed.", None)
+            return {"status": True, "message": translate_to_ta_logic(
+                "Job deleted successfully") if lang == "ta" else "Job deleted successfully"}
+        raise HTTPException(status_code=404, detail="Job not found")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ID")
 
 
-# GET MY JOBS
 @router.get("/my/jobs/", operation_id="getMyJobs")
-def get_my_jobs(
-    user_id: str = Depends(verify_token),
-    lang: str = Query("en")
-):
+def get_my_jobs(user_id: str = Depends(verify_token), lang: str = Query("en")):
     try:
         u_oid = ObjectId(user_id)
     except:
         raise HTTPException(status_code=400, detail="Invalid user id")
 
     jobs = list(col_jobs.find({"user_id": u_oid}).sort("created_at", -1))
-
-    results = []
-    for j in jobs:
-        job_clean = safe(j)
-
-        job_data = {
-            "_id": job_clean["_id"],
-            "job_title": job_clean.get("job_title", ""),
-            "job_description": job_clean.get("job_description", ""),
-            "salary": job_clean.get("salary", ""),
-            "shop_name": job_clean.get("shop_name", ""),
-
-            "phone_number": job_clean.get("phone_number", ""),
-            "email": job_clean.get("email", ""),
-            "address": job_clean.get("address", ""),
-
-            # Return new fields
-            "work_start_time": job_clean.get("work_start_time", ""),
-            "work_end_time": job_clean.get("work_end_time", ""),
-
-            "city_id": job_clean.get("city_id"),
-            "city_name": job_clean.get("city_name", ""),
-            "created_at": job_clean.get("created_at"),
-            "updated_at": job_clean.get("updated_at")
-        }
-        results.append(job_data)
-
-    translated = translate_response_data(results, lang)
-
-    msg = "Jobs fetched successfully"
     return {
         "status": True,
-        "message": translate_to_ta_logic(msg) if lang == "ta" else msg,
-        "data": translated
+        "message": translate_to_ta_logic("Jobs fetched successfully") if lang == "ta" else "Jobs fetched successfully",
+        "data": translate_response_data(safe(jobs), lang)
     }
 
 
-# GET NOTIFICATIONS
+# ==========================================
+#        NOTIFICATIONS & PASSWORD
+# ==========================================
+
 @router.get("/notifications/", operation_id="getNotifications")
-def get_notifications(
-    user_id: str = Depends(verify_token),
-    lang: str = Query("en")
-):
+def get_notifications(user_id: str = Depends(verify_token), lang: str = Query("en")):
     try:
         u_oid = ObjectId(user_id)
     except:
         return {"status": False, "message": "Invalid user"}
-
     notifs = list(col_notifications.find({"user_id": u_oid}).sort("created_at", -1).limit(20))
-
-    data = safe(notifs)
-    translated = translate_response_data(data, lang)
-
-    return {"status": True, "data": translated}
+    return {"status": True, "data": translate_response_data(safe(notifs), lang)}
 
 
-# DELETE NOTIFICATION
 @router.delete("/notification/delete/{notif_id}/", operation_id="deleteNotification")
-def delete_notification(
-        notif_id: str,
-        user_id: str = Depends(verify_token),
-        lang: str = Query("en")
-):
+def delete_notification(notif_id: str, user_id: str = Depends(verify_token), lang: str = Query("en")):
     try:
-        # Delete specific notification belonging to the user
-        res = col_notifications.delete_one({
-            "_id": ObjectId(notif_id),
-            "user_id": ObjectId(user_id)
-        })
-
-        if res.deleted_count > 0:
+        if col_notifications.delete_one({"_id": ObjectId(notif_id), "user_id": ObjectId(user_id)}).deleted_count > 0:
             return {"status": True, "message": "Deleted successfully"}
-        else:
-            return {"status": False, "message": "Notification not found"}
+        return {"status": False, "message": "Notification not found"}
     except:
         return {"status": False, "message": "Invalid ID"}
+
+
+class ChangePasswordBody(BaseModel):
+    old_password: str
+    new_password: str
+
+
+@router.post("/user/change-password/", operation_id="changePassword")
+def change_password(data: ChangePasswordBody, user_id: str = Depends(verify_token)):
+    try:
+        u_oid = ObjectId(user_id)
+    except:
+        raise HTTPException(status_code=400, detail="Invalid user id")
+
+    user = col_user.find_one({"_id": u_oid})
+    if not user: raise HTTPException(status_code=404, detail="User not found")
+    if hash_password(data.old_password) != user.get("password"):
+        raise HTTPException(status_code=400, detail="Old password is incorrect")
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+
+    col_user.update_one({"_id": u_oid}, {"$set": {"password": hash_password(data.new_password)}})
+    return {"status": True, "message": "Password changed successfully"}
