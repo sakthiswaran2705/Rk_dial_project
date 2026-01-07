@@ -37,6 +37,10 @@ const itemVariants = {
 };
 
 function Val() {
+    useEffect(() => {
+      fetch(`${BACKEND_URL}`).catch(() => {});
+    }, []);
+
     const navigate = useNavigate();
     const { t, i18n } = useTranslation();
     const lang = i18n.language || localStorage.getItem("LANG") || "en";
