@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Navbar from "./Navbar.jsx";
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_BACKEND_URL;
 
 const TXT = {
   backToResults: { en: "Back to Results", ta: "முடிவுகளுக்கு திரும்ப" },
