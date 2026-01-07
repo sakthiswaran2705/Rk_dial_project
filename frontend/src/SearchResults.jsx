@@ -258,6 +258,9 @@ export default function SearchResults() {
 
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch(`${BACKEND_URL}`).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const fetchResults = async () => {
