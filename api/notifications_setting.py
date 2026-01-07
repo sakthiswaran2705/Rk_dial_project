@@ -3,9 +3,9 @@ from pydantic import BaseModel
 from bson import ObjectId
 from datetime import datetime
 
-from common_urldb import db
-from auth_jwt import verify_token
-from FullstakFastAPI.api.utils.email_sender import send_email
+from api.common_urldb import db
+from api.auth_jwt import verify_token
+from api.email_sender import send_email
 
 # ---------------- ROUTER ----------------
 router = APIRouter()
@@ -18,9 +18,7 @@ class NotificationSettingsBody(BaseModel):
     email: bool
     push: bool
 
-# =================================================
-# SAVE / UPDATE NOTIFICATION SETTINGS
-# =================================================
+
 @router.post("/user/notification-settings/", operation_id="saveNotificationSettings")
 def save_notification_settings(
     data: NotificationSettingsBody,
