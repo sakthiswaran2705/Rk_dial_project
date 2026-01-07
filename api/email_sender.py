@@ -4,7 +4,7 @@ from email.mime.text import MIMEText
 EMAIL_HOST = "smtp.gmail.com"
 EMAIL_PORT = 587
 EMAIL_USER = "sakthibala2705@gmail.com"
-EMAIL_PASS = "udoq gyeh ylpx uzfc"
+EMAIL_PASS = "xnkv tdfk qiuk htui"
 
 def send_email(to_email, subject, body):
     msg = MIMEText(body, "html")
