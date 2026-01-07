@@ -1,21 +1,22 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
-const API_BASE = import.meta.env.VITE_BACKEND_URL;
-
+const API_BASE = "http://127.0.0.1:8000";
 
 export default function JobDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [job, setJob] = useState(null);
+  const lang = localStorage.getItem("JOB_LANG") || "en";
 
   useEffect(() => {
-    fetch(`${API_BASE}/job/${id}/`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.status) setJob(data.job);
-      });
-  }, [id]);
+      fetch(`${API_BASE}/job/${id}/?lang=${lang}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.status) setJob(data.job);
+        });
+    }, [id, lang]);
+
 
   if (!job) return (
     <div style={styles.loadingPage}>
@@ -31,7 +32,8 @@ export default function JobDetails() {
         <button onClick={() => navigate(-1)} style={styles.backBtn}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
         </button>
-        <h2 style={styles.navTitle}>Job Details</h2>
+        <h2 style={styles.navTitle}>{lang === "en" ? "Job Details." : "வேலை விவரங்கள்."}
+</h2>
         <div style={{ width: 40 }}></div> {/* Spacer */}
       </div>
 
@@ -60,7 +62,7 @@ export default function JobDetails() {
 
         {/* DESCRIPTION SECTION */}
         <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>Job Description</h3>
+            <h3 style={styles.sectionTitle}>{lang === "en" ? "Job Description" : "வேலை விவரம்"}</h3>
             <div style={styles.card}>
                 <p style={styles.descriptionText}>{job.job_description}</p>
             </div>
@@ -68,7 +70,7 @@ export default function JobDetails() {
 
         {/* LOCATION & CONTACT SECTION */}
         <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>Location & Contact</h3>
+            <h3 style={styles.sectionTitle}>{lang === "en" ? "Location & Contact" : "இருப்பிடம் & தொடர்பு"}</h3>
             <div style={styles.card}>
                 {/* Address Row */}
                 <div style={styles.infoRow}>
@@ -76,7 +78,7 @@ export default function JobDetails() {
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
                     </div>
                     <div>
-                        <span style={styles.label}>Address</span>
+                        <span style={styles.label}>{lang === "en" ? "Address" : "முகவரி"}</span>
                         <p style={styles.infoText}>{job.address}</p>
                     </div>
                 </div>
@@ -89,7 +91,7 @@ export default function JobDetails() {
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0d6efd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
                     </div>
                     <div>
-                        <span style={styles.label}>Phone</span>
+                        <span style={styles.label}>{lang === "en" ? "Phone" : "தொலைபேசிி"}</span>
                         <p style={styles.infoText}>{job.phone_number}</p>
                     </div>
                 </div>
@@ -99,7 +101,7 @@ export default function JobDetails() {
         {/* ACTION BUTTONS (Sticky Bottom or Just Bottom) */}
         <div style={styles.actionFooter}>
             <a href={`tel:${job.phone_number}`} style={styles.callBtn}>
-                Call Now
+                {lang === "en" ? "Call Now" : "தொடர்புக்கு "}
             </a>
             {job.email && (
                 <a href={`mailto:${job.email}`} style={styles.emailBtn}>
@@ -117,7 +119,7 @@ const styles = {
   page: {
     background: "#f8f9fa",
     minHeight: "100vh",
-    fontFamily: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    fontFamily: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif,Noto Sans Tamil",
     paddingBottom: "80px", // Space for footer
   },
   loadingPage: {
