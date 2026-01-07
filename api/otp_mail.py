@@ -12,19 +12,11 @@ from api.shop_owner_details import hash_password
 router = APIRouter()
 col_user = db["user"]
 
-# ==============================
-# CONFIG
-# ==============================
 OTP_EXPIRY_MINUTES = 5
 
-# ==============================
-# TEMP OTP STORE
-# ==============================
 OTP_STORE = {}
 
-# ==============================
-# HELPERS
-# ==============================
+
 def generate_otp():
     return str(random.randint(100000, 999999))
 
@@ -58,9 +50,7 @@ If you did not request this, please ignore this email.
     server.quit()
 
 
-# ==============================
-# 1️⃣ SEND OTP
-# ==============================
+
 @router.post("/forgot-password/send-otp/")
 def send_otp(emailorphone: str = Form(...)):
     identifier = emailorphone.strip().lower()
@@ -87,7 +77,6 @@ def send_otp(emailorphone: str = Form(...)):
         "verified": False
     }
 
-    # 🔥 SEND MAIL
     send_otp_email(email, otp)
 
     return {
@@ -96,9 +85,7 @@ def send_otp(emailorphone: str = Form(...)):
     }
 
 
-# ==============================
-# 2️⃣ VERIFY OTP
-# ==============================
+
 @router.post("/forgot-password/verify-otp/")
 def verify_otp(
     email: str = Form(...),
@@ -124,10 +111,6 @@ def verify_otp(
         "message": "OTP verified successfully"
     }
 
-
-# ==============================
-# 3️⃣ RESET PASSWORD
-# ==============================
 @router.post("/forgot-password/reset/")
 def reset_password(
     email: str = Form(...),
