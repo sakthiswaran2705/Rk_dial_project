@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Navbar from "./Navbar.jsx";
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
+const API_BASE = "http://127.0.0.1:8000";
 
 const TXT = {
   backToResults: { en: "Back to Results", ta: "முடிவுகளுக்கு திரும்ப" },
@@ -19,19 +20,16 @@ const TXT = {
   moreShops: { en: "More Shops Like This", ta: "இதுபோன்ற மேலும் கடைகள்" },
   offers: { en: "View Exclusive Offers", ta: "சிறப்பு சலுகைகளை பார்க்க" },
   reviewPlaceholder: { en: "Share your experience about this place...", ta: "உங்கள் அனுபவத்தை இங்கே பகிரவும்..." },
-  loginReviewHint: { en: "Please login to share your experience and add a review.", ta: "உங்கள் அனுபவத்தை பகிர்ந்து மதிப்பீடு செய்ய உள்நுழையவும்." }
+  loginReviewHint: { en: "Please login to share your experience and add a review.", ta: "உங்கள் அனுபவத்தை பகிர்ந்து மதிப்பீடு செய்ய உள்நுழையவும்." },
+  viewsText: { en: "views this month", ta: "பார்வைகள் (இந்த மாதம்)" }
 };
 
-// ==========================================================
-// ⭐ AUTO TOKEN REFRESH FUNCTION
-// ==========================================================
 async function refreshAccessToken() {
   const refresh = localStorage.getItem("REFRESH_TOKEN");
   if (!refresh) return null;
 
   try {
-    const res = await fetch(`${BACKEND_URL}/refresh/`
-, {
+    const res = await fetch(`${API_BASE}/refresh/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refresh })
@@ -55,6 +53,9 @@ function ShopDetails() {
   const navigate = useNavigate();
   const lang = localStorage.getItem("LANG") || "en";
   const t = (key) => TXT[key]?.[lang] || TXT[key]?.en || key;
+
+  // State for readiness
+  const [ready, setReady] = useState(false);
 
   // USER INFO
   const loggedInUserId = localStorage.getItem("USER_ID") || "";
@@ -117,6 +118,9 @@ function ShopDetails() {
   // RELATED SHOPS STATE
   const [relatedShops, setRelatedShops] = useState([]);
 
+  // VIEW COUNT STATE
+  const [views, setViews] = useState(0);
+
   // HELPER: Recalculate Rating
   const recalculateAvgRating = (currentReviews) => {
     if (currentReviews?.length > 0) {
@@ -131,23 +135,33 @@ function ShopDetails() {
       setVisibleReviewCount(reviews.length);
   };
 
+  // ==========================================================
+  // ⭐ EFFECT HOOKS
+  // ==========================================================
+
+  // 0. SET READY STATE
+  useEffect(() => {
+    if (shopId) {
+        setReady(true);
+    }
+  }, [shopId]);
+
   // 1. LOAD SHOP MEDIA
   useEffect(() => {
     if (!shopId) return;
-    
-    fetch(`${BACKEND_URL}/shop/${shopId}/media/`)
+    window.scrollTo(0, 0); // Scroll to top when shopId changes
+
+    fetch(`${API_BASE}/shop/${shopId}/media/`)
       .then((res) => res.json())
       .then((json) => {
         if (json.status && json.media) {
           const formattedMedia = json.media.map((item) => ({
             type: item.type,
-            url: `${BACKEND_URL}/${item?.path}`
+            url: `${API_BASE}/${item.path}`
           }));
           setMediaList(formattedMedia);
           if (json.main_image) {
-            const mainUrl = json?.main_image
-              ? `${BACKEND_URL}/${json.main_image}`
-              : "";
+             const mainUrl = `${API_BASE}/${json.main_image}`;
              const found = formattedMedia.find(m => m.url === mainUrl);
              setMainMedia(found || { type: 'image', url: mainUrl });
           } else {
@@ -161,7 +175,8 @@ function ShopDetails() {
   // 2. LOAD REVIEWS
   useEffect(() => {
     if (!shopId) return;
-    fetch(`${BACKEND_URL}/shop/${shopId}/reviews/`)
+    setReviews([]); // Clear old reviews
+    fetch(`${API_BASE}/shop/${shopId}/reviews/`)
       .then((res) => res.json())
       .then((json) => {
         if (json.status) {
@@ -172,13 +187,12 @@ function ShopDetails() {
       });
   }, [shopId]);
 
-  // 3. LOAD RELATED SHOPS (UPDATED LOGIC)
+  // 3. LOAD RELATED SHOPS
   useEffect(() => {
       if (!shopId) return;
 
-      // First, try to retrieve the search context (results from Search Page)
+      // First, try to retrieve the search context
       let all = JSON.parse(sessionStorage.getItem("SEARCH_CONTEXT_SHOPS"));
-
       // Fallback: If no search context, look for Home Results
       if (!all || all.length === 0) {
           all = JSON.parse(sessionStorage.getItem("HOME_RESULTS")) || [];
@@ -200,6 +214,38 @@ function ShopDetails() {
       );
   }, [shopId]);
 
+  // 4. UPDATE VIEW COUNT (Optimized)
+  useEffect(() => {
+      if (!ready || !shopId) return;
+
+      const viewedKey = `VIEWED_SHOP_${shopId}`;
+      const isViewed = sessionStorage.getItem(viewedKey);
+
+      // Determine endpoint and method:
+      // If already viewed in session -> GET only
+      // If new view -> POST (increment)
+      const endpoint = isViewed
+          ? `${API_BASE}/shop/views/${shopId}`
+          : `${API_BASE}/shop/view/${shopId}`;
+
+      const method = isViewed ? "GET" : "POST";
+
+      fetch(endpoint, { method: method })
+        .then(res => res.json())
+        .then(json => {
+          if (json.status) {
+            setViews(json.total_views);
+            // If it was a successful POST, mark as viewed in session
+            if (!isViewed) {
+                sessionStorage.setItem(viewedKey, "1");
+            }
+          }
+        })
+        .catch(err => console.error("View sync error:", err));
+
+    }, [ready, shopId]);
+
+
   // SUBMIT REVIEW
   const submitReview = async () => {
     if (loggedInUserId === "") {
@@ -216,7 +262,7 @@ function ShopDetails() {
     formData.append("rating", rating);
     formData.append("review", reviewText);
 
-    let res = await fetch(`${BACKEND_URL}/review/add/`, {
+    let res = await fetch(`${API_BASE}/review/add/`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
@@ -229,7 +275,7 @@ function ShopDetails() {
         return navigate("/login");
       }
       token = newToken;
-      res = await fetch(`${BACKEND_URL}/review/add/`, {
+      res = await fetch(`${API_BASE}/review/add/`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -238,7 +284,7 @@ function ShopDetails() {
 
     const json = await res.json();
     if (json.status) {
-      const arr = [json.data, ...reviews]; // Add new review to top
+      const arr = [json.data, ...reviews];
       setReviews(arr);
       recalculateAvgRating(arr);
       setVisibleReviewCount(arr.length);
@@ -256,7 +302,7 @@ function ShopDetails() {
     const formData = new FormData();
     formData.append("review_id", reviewId);
 
-    let res = await fetch(`${BACKEND_URL}/review/delete/`, {
+    let res = await fetch(`${API_BASE}/review/delete/`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
@@ -269,7 +315,7 @@ function ShopDetails() {
         return navigate("/login");
       }
       token = newToken;
-      res = await fetch(`${BACKEND_URL}/review/delete/`, {
+      res = await fetch(`${API_BASE}/review/delete/`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -303,10 +349,10 @@ function ShopDetails() {
 
   // UI RENDER
   return (
-    <>
+    <div key={shopId}>
       <style>
         {`
-            body { background-color: #f0f2f5; font-family: 'Inter', sans-serif,Noto Sans Tamil; }
+            body { background-color: #f0f2f5; font-family: 'Inter', sans-serif, 'Noto Sans Tamil', sans-serif; }
 
             /* --- LAYOUT & CARDS --- */
             .detail-container { max-width: 1200px; margin: 0 auto; padding-bottom: 60px; }
@@ -421,8 +467,35 @@ function ShopDetails() {
             }
             .offer-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(253, 185, 49, 0.5); }
 
-            .contact-row { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 15px; font-size: 15px; color: #555; }
-            .contact-icon { color: #007bff; font-size: 18px; margin-top: 2px; width: 20px; text-align: center; }
+            /* --- FIXED CONTACT ICONS --- */
+            .contact-row {
+                display: flex;
+                align-items: flex-start; /* Aligns to top for multi-line address */
+                gap: 12px;
+                margin-bottom: 18px;
+                font-size: 15px;
+                color: #555;
+            }
+            .contact-icon {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #007bff;
+                width: 24px;
+                height: 24px;
+                flex-shrink: 0; /* Prevents squishing */
+                margin-top: 0px;
+            }
+            /* SVG Styling */
+            .contact-icon svg {
+                width: 20px;
+                height: 20px;
+                fill: none;
+                stroke: currentColor;
+                stroke-width: 2;
+                stroke-linecap: round;
+                stroke-linejoin: round;
+            }
 
             /* --- REVIEWS --- */
             .star-input { font-size: 32px; cursor: pointer; transition: transform 0.1s; color: #ddd; }
@@ -606,9 +679,17 @@ function ShopDetails() {
                     {/* Title & Rating */}
                     <h1 className="shop-title">{getField("shop_name")}</h1>
                     <div className="rating-badge">
-                        <i className="fa fa-star"></i> {avgRating || "New"}
+                        <span style={{color: '#b76e00'}}>★</span> {avgRating || "New"}
                         {reviews.length > 0 && <span style={{color:'#666', fontWeight:400, marginLeft:5}}>({reviews.length} reviews)</span>}
                     </div>
+
+                    {/* === VIEW COUNT DISPLAY === */}
+                    <div className="mb-3 text-secondary" style={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>👁</span>
+                        <strong>{views}</strong>
+                        <span>{t("viewsText")}</span>
+                    </div>
+                    {/* ========================== */}
 
                     {/* Location */}
                     <p className="text-muted mb-4">
@@ -617,11 +698,16 @@ function ShopDetails() {
 
                     <hr className="my-4" />
 
-                    {/* Contact Details */}
+                    {/* Contact Details with INLINE SVGs */}
                     <h5 className="section-title mb-3">{t("contactInfo")}</h5>
 
                     <div className="contact-row">
-                        <div className="contact-icon"><i className="fa fa-phone"></i></div>
+                        <div className="contact-icon">
+                            {/* Phone Icon SVG */}
+                            <svg viewBox="0 0 24 24">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                            </svg>
+                        </div>
                         <div>
                             <strong>Phone</strong><br/>
                             <a href={`tel:${getField("phone_number")}`} className="text-decoration-none">{getField("phone_number")}</a>
@@ -629,7 +715,13 @@ function ShopDetails() {
                     </div>
 
                     <div className="contact-row">
-                        <div className="contact-icon"><i className="fa fa-envelope"></i></div>
+                        <div className="contact-icon">
+                            {/* Email Icon SVG */}
+                            <svg viewBox="0 0 24 24">
+                                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                                <polyline points="22,6 12,13 2,6"></polyline>
+                            </svg>
+                        </div>
                         <div>
                             <strong>Email</strong><br/>
                             {getField("email")}
@@ -637,7 +729,13 @@ function ShopDetails() {
                     </div>
 
                     <div className="contact-row">
-                        <div className="contact-icon"><i className="fa fa-map-marker"></i></div>
+                        <div className="contact-icon">
+                            {/* Map Pin Icon SVG */}
+                            <svg viewBox="0 0 24 24">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                <circle cx="12" cy="10" r="3"></circle>
+                            </svg>
+                        </div>
                         <div>
                             <strong>Address</strong><br/>
                             {getField("address")}<br/>
@@ -671,7 +769,7 @@ function ShopDetails() {
         </div>
 
       </div>
-    </>
+    </div>
   );
 }
 
@@ -686,12 +784,12 @@ const RelatedCard = ({ data, navigate }) => {
   useEffect(() => {
     setPhoto(null);
     if (!shop._id) return;
-    fetch(`http://127.0.0.1:8000/shop/${shop._id}/media/`)
+    fetch(`${API_BASE}/shop/${shop._id}/media/`)
       .then((res) => res.json())
       .then((json) => {
         if (json.status && json.media) {
           const firstImg = json.media.find(item => item.type === 'image');
-          if (firstImg) setPhoto(`http://127.0.0.1:8000/${firstImg.path}`);
+          if (firstImg) setPhoto(`${API_BASE}/${firstImg.path}`);
         }
       })
       .catch(err => console.log(err));
@@ -703,11 +801,11 @@ const RelatedCard = ({ data, navigate }) => {
         onClick={() => {
             const shopObj = data.shop || data.shop?.shop || data;
             const cityObj = data.city || data.shop?.city || {};
-            // Set Selected Shop to this new one
+            // 1. Set Selected Shop
             sessionStorage.setItem("SELECTED_SHOP", JSON.stringify({ shop: shopObj, city: cityObj }));
-            window.scrollTo({ top: 0 });
-            // Force navigation to same page with new state
-            navigate("/shop", { replace: true, state: { shop: shopObj, city: cityObj } });
+            // 2. Navigate (replace: false allows user to go back)
+            // The key={shopId} in main component handles the refresh
+            navigate("/shop", { state: { shop: shopObj, city: cityObj } });
         }}
     >
         {photo ? (
