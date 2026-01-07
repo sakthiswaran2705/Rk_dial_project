@@ -6,7 +6,6 @@ import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion"; // Import Framer Motion
 
 import Navbar from "./Navbar.jsx";
-// 👇 ENSURE THIS IMAGE PATH IS CORRECT
 import heroBgImage from "./image_cc786f.jpg";
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
