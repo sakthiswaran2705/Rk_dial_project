@@ -3,14 +3,24 @@ import { authenticatedFetch } from "./authFetch";
 import { useNavigate } from "react-router-dom";
 import Navbar from "./Navbar";
 
-// CONSTANTS
+import { motion, AnimatePresence } from "framer-motion";
+import { Icon } from "@blueprintjs/core";
+
+// --- CONSTANTS ---
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // 20MB
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 const mediaUrl = (path) => (path ? `${BACKEND_URL}/${path}` : "");
 
-//TRANSLATION MAP
+// --- POPUP VARIANTS (Animation) ---
+const popupVariants = {
+  initial: { opacity: 0, y: -50, scale: 0.9 },
+  animate: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 300, damping: 20 } },
+  exit: { opacity: 0, y: -20, scale: 0.9, transition: { duration: 0.2 } }
+};
+
+// --- TRANSLATION MAP ---
 const TXT = {
   dashboard: { en: "Shop Dashboard", ta: "கடை கட்டுப்பாட்டுப் பலகை" },
   addShop: { en: "+ Add Shop", ta: "+ கடையைச் சேர்" },
@@ -72,7 +82,6 @@ export default function Dashboard() {
 
   // --- STATE ---
   const [shops, setShops] = useState([]);
-  const [errorMsg, setErrorMsg] = useState("");
   const [lang, setLang] = useState(localStorage.getItem("LANG") || "en");
 
   // Subscription Plan State
@@ -85,6 +94,15 @@ export default function Dashboard() {
   const [categorySug, setCategorySug] = useState([]);
   const [citySug, setCitySug] = useState([]);
   const typingRef = useRef(null);
+
+  // --- POPUP STATE ---
+  const [popup, setPopup] = useState(null);
+
+  // Helper to show Popup
+  const showPopup = (type, message, title = "") => {
+    setPopup({ type, message, title });
+    setTimeout(() => setPopup(null), 3500);
+  };
 
   // --- FORMS STATE ---
   // Shop Form
@@ -169,7 +187,7 @@ export default function Dashboard() {
       });
       const json = await res.json();
       if (json?.data) setShops(json.data);
-      else showError(json?.message || "Failed to load shops");
+      else showPopup("error", json?.message || "Failed to load shops", "Error");
     } catch (err) {
       console.warn("Load error:", err);
     }
@@ -191,18 +209,16 @@ export default function Dashboard() {
 
     // 2. Not Subscribed Check
     if (!planInfo.subscribed) {
-      // Show confirmation dialog as requested
       if (window.confirm("You need an active subscription to continue. Do you want to view plans?")) {
         navigate("/plan");
       }
-      // Return false to stop the modal from opening
       return false;
     }
 
     // 3. Subscription Active: Check Shop Limit
     if (type === "shop") {
       if (planInfo.usage.shops_left <= 0) {
-        alert(`You have reached the shop limit for the ${planInfo.plan} plan.`);
+        showPopup("warning", `You have reached the shop limit for the ${planInfo.plan} plan.`, "Limit Reached");
         return false;
       }
     }
@@ -210,18 +226,13 @@ export default function Dashboard() {
     // 4. Subscription Active: Check Offer Limit
     if (type === "offer") {
       if (planInfo.usage.offers_left <= 0) {
-        alert(`You have reached the offer limit for the ${planInfo.plan} plan.`);
+        showPopup("warning", `You have reached the offer limit for the ${planInfo.plan} plan.`, "Limit Reached");
         return false;
       }
     }
 
     // If all checks pass, allow access
     return true;
-  };
-
-  const showError = (msg) => {
-    setErrorMsg(msg);
-    setTimeout(() => setErrorMsg(""), 4000);
   };
 
   const fetchCategory = async (text) => {
@@ -322,12 +333,12 @@ export default function Dashboard() {
 
     // Strict validation for Main Image (Images only, max 5MB)
     if (!file.type.startsWith("image/")) {
-      alert("Main Image must be a valid image file.");
+      showPopup("warning", "Main Image must be a valid image file.", "Invalid File");
       if (mainImageInputRef.current) mainImageInputRef.current.value = "";
       return;
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      alert(`Main Image too large: ${file.name} (Max 5MB)`);
+      showPopup("warning", `Main Image too large: ${file.name} (Max 5MB)`, "File Size Error");
       if (mainImageInputRef.current) mainImageInputRef.current.value = "";
       return;
     }
@@ -362,13 +373,13 @@ export default function Dashboard() {
       const isVideo = file.type.startsWith("video/");
 
       if (isAddMode && isVideo) {
-        alert("Videos are only allowed when editing an existing shop.");
+        showPopup("warning", "Videos are only allowed when editing an existing shop.", "Restricted");
         continue;
       }
 
       if (isImage) {
         if (file.size > MAX_IMAGE_BYTES) {
-          alert(`File too large: ${file.name} (Max 5MB)`);
+          showPopup("warning", `File too large: ${file.name} (Max 5MB)`, "Size Error");
           continue;
         }
         newMedia.push(file);
@@ -376,13 +387,13 @@ export default function Dashboard() {
       } else if (isVideo) {
         // This block only runs in edit mode due to the check above
         if (file.size > MAX_VIDEO_BYTES) {
-          alert(`File too large: ${file.name} (Max 20MB)`);
+          showPopup("warning", `File too large: ${file.name} (Max 20MB)`, "Size Error");
           continue;
         }
         newMedia.push(file);
         newPreviews.push({ type: "video", url: URL.createObjectURL(file) });
       } else {
-        alert(`Invalid type: ${file.name}`);
+        showPopup("error", `Invalid type: ${file.name}`, "Format Error");
       }
     }
 
@@ -408,7 +419,7 @@ export default function Dashboard() {
   };
 
   const submitShopForm = async () => {
-    if (!form.city_id && !citySelected) return showError(TXT.citySelectErr[lang]);
+    if (!form.city_id && !citySelected) return showPopup("error", TXT.citySelectErr[lang], "City Required");
 
     setSaving(true);
     const fd = new FormData();
@@ -440,13 +451,14 @@ export default function Dashboard() {
       const json = await res.json();
       if (json?.status === "success") {
         setShowForm(false);
+        showPopup("success", editingShop ? "Shop updated successfully" : "Shop added successfully", "Success");
         await loadShops();
         await fetchPlanStatus(); // Refresh limit counts
       } else {
-        showError(json?.message || "Operation failed");
+        showPopup("error", json?.message || "Operation failed", "Error");
       }
     } catch (e) {
-      showError("Server Error");
+      showPopup("error", "Server Error", "Network");
     } finally {
       setSaving(false);
     }
@@ -459,10 +471,11 @@ export default function Dashboard() {
       const res = await authenticatedFetch(`/shop/delete/${id}/?lang=${lang}`, { method: "DELETE" });
       const json = await res.json();
       if (json?.status === "success") {
+         showPopup("success", "Shop deleted successfully", "Deleted");
          await loadShops();
          await fetchPlanStatus(); // Refresh limit counts
-      } else showError("Delete failed");
-    } catch (e) { showError("Server Error"); }
+      } else showPopup("error", "Delete failed", "Error");
+    } catch (e) { showPopup("error", "Server Error", "Network"); }
     finally { setDeletingId(null); }
   };
 
@@ -480,11 +493,12 @@ export default function Dashboard() {
       if (json?.status === "success") {
         // Update local state to remove the item visually
         setExistingPhotos(prev => prev.filter(p => p.path !== path));
+        showPopup("success", "Photo deleted", "Success");
         loadShops(); // Refresh parent data
       } else {
-        showError(json?.message || "Delete failed");
+        showPopup("error", json?.message || "Delete failed", "Error");
       }
-    } catch (e) { showError("Server Error"); }
+    } catch (e) { showPopup("error", "Server Error", "Network"); }
   };
 
   // --- OFFER HANDLERS ---
@@ -495,7 +509,7 @@ export default function Dashboard() {
     if (file.type.startsWith("image/") && file.size <= MAX_IMAGE_BYTES) valid = true;
     else if (file.type.startsWith("video/") && file.size <= MAX_VIDEO_BYTES) valid = true;
 
-    if (!valid) return alert(TXT.mediaFileLabel[lang]);
+    if (!valid) return showPopup("warning", TXT.mediaFileLabel[lang], "Invalid File");
 
     const url = URL.createObjectURL(file);
     if (isUpdate) {
@@ -511,9 +525,9 @@ export default function Dashboard() {
 
   const submitOffer = async (isUpdate) => {
     const f = isUpdate ? updateOfferForm : offerForm;
-    if (!f.shop_id && !isUpdate) return alert(TXT.selectShopErr[lang]);
-    if (!f.title || !f.start_date || !f.end_date) return alert(TXT.enterTitle[lang]);
-    if (!isUpdate && !f.file) return alert("File required");
+    if (!f.shop_id && !isUpdate) return showPopup("warning", TXT.selectShopErr[lang], "Missing Field");
+    if (!f.title || !f.start_date || !f.end_date) return showPopup("warning", TXT.enterTitle[lang], "Missing Field");
+    if (!isUpdate && !f.file) return showPopup("warning", "File required", "Missing File");
 
     const fd = new FormData();
     if (isUpdate) {
@@ -542,10 +556,11 @@ export default function Dashboard() {
       if (json?.status) {
         if (isUpdate) setShowUpdateOfferForm(false);
         else setShowOfferForm(false);
+        showPopup("success", isUpdate ? "Offer updated!" : "Offer added!", "Success");
         await loadShops();
         await fetchPlanStatus(); // Refresh limit counts
-      } else alert(json?.message || "Failed");
-    } catch (e) { alert("Server Error"); }
+      } else showPopup("error", json?.message || "Failed", "Error");
+    } catch (e) { showPopup("error", "Server Error", "Network"); }
     finally { setter(false); }
   };
 
@@ -555,10 +570,11 @@ export default function Dashboard() {
       const res = await authenticatedFetch(`/delete/offer/?offer_id=${id}&lang=${lang}`, { method: "DELETE" });
       const json = await res.json();
       if (json?.status === "success") {
+          showPopup("success", "Offer deleted", "Deleted");
           await loadShops();
           await fetchPlanStatus();
       }
-    } catch (e) { alert("Server Error"); }
+    } catch (e) { showPopup("error", "Server Error", "Network"); }
   };
 
   // --- GALLERY LOGIC ---
@@ -603,7 +619,12 @@ export default function Dashboard() {
     card: "#FFFFFF",
     text: "#1F2937",
     subtext: "#6B7280",
-    border: "#E5E7EB"
+    border: "#E5E7EB",
+    // Popup Colors
+    pSuccess: "#10b981",
+    pError: "#ef4444",
+    pWarning: "#f59e0b",
+    pInfo: "#3b82f6"
   };
 
   const s = {
@@ -645,6 +666,51 @@ export default function Dashboard() {
 
   return (
     <div style={s.page}>
+      {/* CSS For Popup */}
+      <style>
+        {`
+        .custom-popup-toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 999999;
+            min-width: 320px;
+            max-width: 400px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            border: 1px solid rgba(255,255,255,0.8);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .popup-icon-box {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .popup-icon-box.success { background: rgba(16, 185, 129, 0.15); color: ${colors.pSuccess}; }
+        .popup-icon-box.error { background: rgba(239, 68, 68, 0.15); color: ${colors.pError}; }
+        .popup-icon-box.warning { background: rgba(245, 158, 11, 0.15); color: ${colors.pWarning}; }
+        .popup-icon-box.info { background: rgba(59, 130, 246, 0.15); color: ${colors.pInfo}; }
+
+        .popup-content h5 { margin: 0; font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 2px; }
+        .popup-content p { margin: 0; font-size: 13px; color: #64748b; line-height: 1.4; font-weight: 500; }
+        .popup-close { position: absolute; top: 10px; right: 10px; cursor: pointer; color: #94a3b8; transition: color 0.2s; }
+        .popup-close:hover { color: #1e293b; }
+        @media (max-width: 768px) {
+            .custom-popup-toast { top: 10px; left: 10px; right: 10px; min-width: auto; max-width: 100%; }
+        }
+        `}
+      </style>
+
       <Navbar />
 
       {/* --- PLAN USAGE INFO BOX --- */}
@@ -701,8 +767,6 @@ export default function Dashboard() {
 
         </div>
       </div>
-
-      {errorMsg && <div style={{backgroundColor: "#FEE2E2", color: "#991B1B", padding: "1rem", borderRadius: "8px", marginBottom: "1rem"}}>{errorMsg}</div>}
 
       {shops.length === 0 ? (
         <div style={{textAlign: "center", color: colors.subtext, padding: "3rem"}}>{TXT.noShops[lang]}</div>
@@ -1101,6 +1165,37 @@ export default function Dashboard() {
            </div>
         </div>
       )}
+
+      {/* --- POPUP COMPONENT (Framer Motion) --- */}
+      <AnimatePresence>
+        {popup && (
+            <motion.div
+                className="custom-popup-toast"
+                variants={popupVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+            >
+                <div className={`popup-icon-box ${popup.type}`}>
+                    <Icon
+                        icon={
+                            popup.type === 'success' ? 'tick-circle' :
+                            popup.type === 'error' ? 'error' :
+                            popup.type === 'warning' ? 'warning-sign' : 'info-sign'
+                        }
+                        iconSize={24}
+                    />
+                </div>
+                <div className="popup-content">
+                    {popup.title && <h5>{popup.title}</h5>}
+                    <p>{popup.message}</p>
+                </div>
+                <div className="popup-close" onClick={() => setPopup(null)}>
+                    <Icon icon="cross" size={16} />
+                </div>
+            </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
