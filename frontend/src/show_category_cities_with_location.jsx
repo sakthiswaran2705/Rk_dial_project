@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "./Navbar.jsx";
 // 👇 ENSURE THIS IMAGE PATH IS CORRECT
 import heroBgImage from "./image_cc786f.jpg";
-
+const API_BASE = import.meta.env.VITE_BACKEND_URL;
 // ---------------- DEBOUNCE HOOK ----------------
 const useDebounce = (callback, delay) => {
     const timer = useRef(null);
@@ -74,7 +74,8 @@ function Val() {
     useEffect(() => {
         const loadCategories = async () => {
             try {
-                const res = await fetch(`http://127.0.0.1:8000/category/list/?lang=${lang}`);
+                const res = await fetch(`${API_BASE}/category/list/?lang=${lang}`);
+
                 const json = await res.json();
                 setCategoryList(json.data || []);
             } catch (err) {
@@ -143,7 +144,8 @@ function Val() {
     const fetchCategorySuggestions = async (value) => {
         if (!value.trim()) { setSuggestions([]); return; }
         try {
-            const res = await fetch(`http://127.0.0.1:8000/shop/search/?name=${encodeURIComponent(value)}&lang=${lang}`);
+            const res = await fetch(`${API_BASE}/shop/search/?name=${encodeURIComponent(value)}&lang=${lang}`);
+
             const json = await res.json();
             let list = [];
             const data = json.data || [];
@@ -161,7 +163,8 @@ function Val() {
     const fetchCitySuggestions = async (value) => {
         if (value.trim().length < 2) { setCitySuggestions([]); return; }
         try {
-            const res = await fetch(`http://127.0.0.1:8000/city/search/?city_name=${encodeURIComponent(value)}&lang=${lang}`);
+            const res = await fetch(`${API_BASE}/city/search/?city_name=${encodeURIComponent(value)}&lang=${lang}`);
+
             const json = await res.json();
             const list = (json.data || []).map((c) => c.city_name).filter((name) => name?.toLowerCase().includes(value.toLowerCase()));
             setCitySuggestions([...new Set(list)].slice(0, 8));
@@ -197,7 +200,8 @@ function Val() {
         const fetchSlides = async () => {
             setIsSlidesLoading(true);
             try {
-                const res = await fetch(`http://127.0.0.1:8000/offers/${encodeURIComponent(cityInput)}/?lang=${lang}`, { signal: controller.signal });
+                const res = await fetch(
+  `${API_BASE}/offers/${encodeURIComponent(cityInput)}/?lang=${lang}`, { signal: controller.signal });
                 const json = await res.json();
                 if (json.status) {
                     setSlides((json.slides || []).map((off) => ({
@@ -223,7 +227,8 @@ function Val() {
         if (slides.length === 0) return null;
 
         const current = slides[index];
-        const url = `http://127.0.0.1:8000/${current.path}`;
+        const url = `${API_BASE}/${current.path}`;
+
 
         return (
             <div className="modern-slideshow-container">
@@ -248,7 +253,7 @@ function Val() {
     };
 
     const renderCategoryIcon = (cat) => {
-        if (cat?.category_image) return <img src={`http://127.0.0.1:8000/${cat.category_image}`} alt={cat.name} className="cat-icon-img" />;
+        if (cat?.category_image) return <img src={`${API_BASE}/${cat.category_image}`}  alt={cat.name} className="cat-icon-img" />;
         return <div className="cat-icon-placeholder">{cat.name?.[0]?.toUpperCase()}</div>;
     };
 
