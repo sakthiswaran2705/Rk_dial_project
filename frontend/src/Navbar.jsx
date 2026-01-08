@@ -70,7 +70,6 @@ function Navbar() {
   const ispaymentPage = location.pathname === "/payments";
   const isloginPage = location.pathname === "/login";
   const isjobPage = location.pathname === "/my-jobs";
-  const isjobPage = location.pathname === "/my-jobs";
   // ---------------------------------------------
   // 1. SYNC SEARCH INPUTS FROM URL
   // ---------------------------------------------
