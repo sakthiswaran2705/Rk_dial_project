@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Button, InputGroup, Spinner } from "@blueprintjs/core";
+import { Button, InputGroup, Spinner, Icon } from "@blueprintjs/core"; // Added Icon
 import "bootstrap/dist/css/bootstrap.min.css";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { motion, AnimatePresence } from "framer-motion"; // Import Framer Motion
+import { motion, AnimatePresence } from "framer-motion";
 
 import Navbar from "./Navbar.jsx";
+// 👇 ENSURE THIS IMAGE PATH IS CORRECT
 import heroBgImage from "./image_cc786f.jpg";
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 // ---------------- DEBOUNCE HOOK ----------------
 const useDebounce = (callback, delay) => {
@@ -35,11 +35,14 @@ const itemVariants = {
     visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } }
 };
 
-function Val() {
-    useEffect(() => {
-      fetch(`${BACKEND_URL}`).catch(() => {});
-    }, []);
+// ---------------- POPUP VARIANTS (New) ----------------
+const popupVariants = {
+    initial: { opacity: 0, y: -50, scale: 0.9 },
+    animate: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 300, damping: 20 } },
+    exit: { opacity: 0, y: -20, scale: 0.9, transition: { duration: 0.2 } }
+};
 
+function Val() {
     const navigate = useNavigate();
     const { t, i18n } = useTranslation();
     const lang = i18n.language || localStorage.getItem("LANG") || "en";
@@ -56,13 +59,22 @@ function Val() {
     const [slides, setSlides] = useState([]);
     const [isSlidesLoading, setIsSlidesLoading] = useState(false);
 
+    // ---------------- NEW: POPUP STATE ----------------
+    // popup object: { type: 'success'|'error'|'warning'|'info', title: string, message: string }
+    const [popup, setPopup] = useState(null);
+
+    // ---------------- NEW: POPUP HELPER FUNCTION ----------------
+    const showPopup = (type, message, title = "") => {
+        setPopup({ type, message, title });
+        // Auto close after 3 seconds
+        setTimeout(() => setPopup(null), 3000);
+    };
+
     // ---------------- 1. INITIAL LOADS ----------------
     useEffect(() => {
         const loadCategories = async () => {
             try {
-                const res = await fetch(
-                      `${BACKEND_URL}/category/list/?lang=${lang}`
-                    );
+                const res = await fetch(`http://127.0.0.1:8000/category/list/?lang=${lang}`);
                 const json = await res.json();
                 setCategoryList(json.data || []);
             } catch (err) {
@@ -89,6 +101,8 @@ function Val() {
                 if (data.city) {
                     setCityInput(data.city);
                     sessionStorage.setItem("CITY_NAME", data.city);
+                    // Optional: Show success popup for auto-detect
+                    // showPopup("info", `Location detected: ${data.city}`, "Auto Location");
                 }
             } catch (err) {
                 console.error("Auto Location Failed:", err);
@@ -99,7 +113,10 @@ function Val() {
 
     // ---------------- 3. MANUAL GPS LOCATION ----------------
     const getCurrentCity = () => {
-        if (!navigator.geolocation) return alert(t("geolocation not supported"));
+        if (!navigator.geolocation) return showPopup("error", t("geolocation not supported"), "Error");
+
+        showPopup("info", "Fetching location...", "Please wait"); // Loading state
+
         navigator.geolocation.getCurrentPosition(
             async (pos) => {
                 const { latitude, longitude } = pos.coords;
@@ -108,14 +125,17 @@ function Val() {
                     const res = await fetch(url);
                     const data = await res.json();
                     const city = data.address.city || data.address.town || data.address.village || "";
-                    if (!city) return alert(t("city not found"));
+                    if (!city) return showPopup("warning", t("city not found"), "Not Found");
+
                     setCityInput(city);
                     sessionStorage.setItem("CITY_NAME", city);
+                    showPopup("success", `${city} selected successfully!`, "Location Set");
                 } catch (err) {
                     console.error(err);
+                    showPopup("error", "Failed to fetch address details", "Network Error");
                 }
             },
-            () => alert(t("enable location access"))
+            () => showPopup("warning", t("enable location access"), "Permission Denied")
         );
     };
 
@@ -123,10 +143,7 @@ function Val() {
     const fetchCategorySuggestions = async (value) => {
         if (!value.trim()) { setSuggestions([]); return; }
         try {
-            const res = await fetch(
-              `${BACKEND_URL}/shop/search/?name=${encodeURIComponent(value)}&lang=${lang}`
-            );
-
+            const res = await fetch(`http://127.0.0.1:8000/shop/search/?name=${encodeURIComponent(value)}&lang=${lang}`);
             const json = await res.json();
             let list = [];
             const data = json.data || [];
@@ -144,10 +161,7 @@ function Val() {
     const fetchCitySuggestions = async (value) => {
         if (value.trim().length < 2) { setCitySuggestions([]); return; }
         try {
-            const res = await fetch(
-              `${BACKEND_URL}/city/search/?city_name=${encodeURIComponent(value)}&lang=${lang}`
-            );
-
+            const res = await fetch(`http://127.0.0.1:8000/city/search/?city_name=${encodeURIComponent(value)}&lang=${lang}`);
             const json = await res.json();
             const list = (json.data || []).map((c) => c.city_name).filter((name) => name?.toLowerCase().includes(value.toLowerCase()));
             setCitySuggestions([...new Set(list)].slice(0, 8));
@@ -158,7 +172,9 @@ function Val() {
     const debouncedCity = useDebounce(fetchCitySuggestions, 300);
 
     const searchNow = (category = categoryInput, city = cityInput) => {
-        if (!category || !city) return alert(t("fill_both_fields"));
+        // 👇 REPLACED ALERT WITH POPUP
+        if (!category || !city) return showPopup("warning", t("fill both fields"), "Missing Info");
+
         let arr = [category, ...recentSearch.filter((x) => x !== category)];
         if (arr.length > 8) arr = arr.slice(0, 8);
         setRecentSearch(arr);
@@ -168,7 +184,8 @@ function Val() {
     };
 
     const handleCategoryClick = (cat) => {
-        if (!cat?.name || !cityInput) return alert(t("select_city_first"));
+        // 👇 REPLACED ALERT WITH POPUP
+        if (!cat?.name || !cityInput) return showPopup("warning", t("select_city_first"), "Select City");
         setCategoryInput(cat.name);
         searchNow(cat.name, cityInput);
     };
@@ -180,11 +197,7 @@ function Val() {
         const fetchSlides = async () => {
             setIsSlidesLoading(true);
             try {
-                const res = await fetch(
-                      `${BACKEND_URL}/offers/${encodeURIComponent(cityInput)}/?lang=${lang}`,
-                      { signal: controller.signal }
-                    );
-
+                const res = await fetch(`http://127.0.0.1:8000/offers/${encodeURIComponent(cityInput)}/?lang=${lang}`, { signal: controller.signal });
                 const json = await res.json();
                 if (json.status) {
                     setSlides((json.slides || []).map((off) => ({
@@ -210,8 +223,7 @@ function Val() {
         if (slides.length === 0) return null;
 
         const current = slides[index];
-        const url = `${BACKEND_URL}/${current.path}`;
-
+        const url = `http://127.0.0.1:8000/${current.path}`;
 
         return (
             <div className="modern-slideshow-container">
@@ -236,11 +248,7 @@ function Val() {
     };
 
     const renderCategoryIcon = (cat) => {
-        if (cat?.category_image) return <img
-                  src={`${BACKEND_URL}/${cat.category_image}`}
-                  alt={cat.name}
-                  className="cat-icon-img"
-                />
+        if (cat?.category_image) return <img src={`http://127.0.0.1:8000/${cat.category_image}`} alt={cat.name} className="cat-icon-img" />;
         return <div className="cat-icon-placeholder">{cat.name?.[0]?.toUpperCase()}</div>;
     };
 
@@ -259,6 +267,12 @@ function Val() {
                     --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
                     --text-dark: #1e293b;
                     --bg-light: #f8fafc;
+
+                    /* Popup Colors */
+                    --success: #10b981;
+                    --error: #ef4444;
+                    --warning: #f59e0b;
+                    --info: #3b82f6;
                 }
 
                 body {
@@ -266,6 +280,65 @@ function Val() {
                     font-family: 'Plus Jakarta Sans', sans-serif;
                     overflow-x: hidden;
                 }
+
+                /* --- NEW: GLASS POPUP STYLES --- */
+                .custom-popup-toast {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    z-index: 999999;
+                    min-width: 320px;
+                    max-width: 400px;
+                    background: rgba(255, 255, 255, 0.95);
+                    backdrop-filter: blur(12px);
+                    -webkit-backdrop-filter: blur(12px);
+                    border-radius: 16px;
+                    padding: 16px;
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+                    border: 1px solid rgba(255,255,255,0.8);
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 12px;
+                }
+
+                .popup-icon-box {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 12px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex-shrink: 0;
+                }
+                .popup-icon-box.success { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+                .popup-icon-box.error { background: rgba(239, 68, 68, 0.15); color: var(--error); }
+                .popup-icon-box.warning { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+                .popup-icon-box.info { background: rgba(59, 130, 246, 0.15); color: var(--info); }
+
+                .popup-content h5 {
+                    margin: 0;
+                    font-size: 16px;
+                    font-weight: 700;
+                    color: var(--text-dark);
+                    margin-bottom: 2px;
+                }
+                .popup-content p {
+                    margin: 0;
+                    font-size: 13px;
+                    color: #64748b;
+                    line-height: 1.4;
+                    font-weight: 500;
+                }
+                .popup-close {
+                    position: absolute;
+                    top: 10px;
+                    right: 10px;
+                    cursor: pointer;
+                    color: #94a3b8;
+                    transition: color 0.2s;
+                }
+                .popup-close:hover { color: var(--text-dark); }
+                /* -------------------------------- */
 
                 /* --- HERO SECTION --- */
                 .hero-wrapper {
@@ -539,6 +612,9 @@ function Val() {
                     .cat-card { min-height: 110px; padding: 15px 5px; }
                     .cat-name { font-size: 12px; }
                     .footer-nav { gap: 15px; flex-direction: column; align-items: center; }
+
+                    /* Popup Mobile */
+                    .custom-popup-toast { top: 10px; left: 10px; right: 10px; min-width: auto; max-width: 100%; }
                 }
                 `}
             </style>
@@ -748,6 +824,37 @@ function Val() {
                     </div>
                 </footer>
             </div>
+
+            {/* --- NEW: POPUP COMPONENT (TOAST) --- */}
+            <AnimatePresence>
+                {popup && (
+                    <motion.div
+                        className="custom-popup-toast"
+                        variants={popupVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                    >
+                        <div className={`popup-icon-box ${popup.type}`}>
+                            <Icon
+                                icon={
+                                    popup.type === 'success' ? 'tick-circle' :
+                                    popup.type === 'error' ? 'error' :
+                                    popup.type === 'warning' ? 'warning-sign' : 'info-sign'
+                                }
+                                iconSize={24}
+                            />
+                        </div>
+                        <div className="popup-content">
+                            {popup.title && <h5>{popup.title}</h5>}
+                            <p>{popup.message}</p>
+                        </div>
+                        <div className="popup-close" onClick={() => setPopup(null)}>
+                            <Icon icon="cross" size={16} />
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </>
     );
 }
