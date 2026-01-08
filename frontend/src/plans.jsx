@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import plansData from "./plans.json";
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 /* ================= UTILS ================= */
 // Load Razorpay script dynamically if not present
@@ -94,8 +93,7 @@ export default function Plan() {
       }
 
       // 2. Create Order
-      const orderRes = await fetch(
-        `${BACKEND_URL}/payment/create-order/`, {
+      const orderRes = await fetch("http://127.0.0.1:8000/payment/create-order/", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ amount: plan.price }),
@@ -119,8 +117,7 @@ export default function Plan() {
         handler: async function (response) {
           try {
             // 4. Verify Payment
-            const verifyRes = await fetch(
-              `${BACKEND_URL}/payment/verify/`, {
+            const verifyRes = await fetch("http://127.0.0.1:8000/payment/verify/", {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
               body: JSON.stringify(response),
@@ -133,8 +130,7 @@ export default function Plan() {
             }
 
             // 5. Save Success (Consider moving this logic to backend inside 'verify' to speed this up)
-            await fetch(
-              `${BACKEND_URL}/payment/save/`, {
+            await fetch("http://127.0.0.1:8000/payment/save/", {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
               body: JSON.stringify({
@@ -222,9 +218,20 @@ export default function Plan() {
       )}
 
       {/* BACK BUTTON */}
-      <button style={styles.backBtn} onClick={() => window.history.back()}>
-        {TXT.back[LANG]}
-      </button>
+      <div style={headerStyles.header}>
+          <button
+            style={headerStyles.backBtn}
+            onClick={() => navigate(-1)}
+          >
+            ← Back
+          </button>
+
+          <h2 style={headerStyles.title}>
+            RK Dial Plans
+          </h2>
+
+          <div style={{ width: 60 }}></div>
+        </div>
 
       {/* TITLE */}
       <h1 style={styles.title}>{TXT.title[LANG]}</h1>
@@ -322,11 +329,42 @@ export default function Plan() {
 
 /* ================= STYLES ================= */
 // Styles remain unchanged, just pasted below for context
+const headerStyles = {
+  header: {
+    position: "sticky",
+    top: 0,
+    zIndex: 100,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "14px 20px",
+    background: "#0f0f0f",
+    borderBottom: "1px solid #222",
+  },
+  backBtn: {
+    background: "transparent",
+    border: "1px solid #333",
+    color: "#fff",
+    padding: "6px 12px",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontSize: "14px",
+  },
+  title: {
+    margin: 0,
+    fontSize: "18px",
+    fontWeight: 700,
+    color: "#fff",
+    letterSpacing: "0.5px",
+  },
+};
+
 const styles = {
   page: {
     background: "#0f0f0f",
     minHeight: "100vh",
     padding: "40px 20px",
+    paddingTop: "20px",
     textAlign: "center",
     color: "white",
     fontFamily: "Inter, sans-serif, Noto Sans Tamil",
