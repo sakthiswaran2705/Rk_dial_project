@@ -1,13 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-
-const API_BASE = import.meta.env.VITE_BACKEND_URL;
+import Navbar from "./Navbar.jsx";
+const API_BASE = "http://127.0.0.1:8000";
 
 export default function JobDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [job, setJob] = useState(null);
-  const lang = localStorage.getItem("JOB_LANG") || "en";
+  const getLang = () => localStorage.getItem("LANG") || "en";
+  const [lang, setLang] = useState(getLang());
+
+  useEffect(() => {
+      const handler = () => setLang(getLang());
+      window.addEventListener("LANG_CHANGE", handler);
+      return () => window.removeEventListener("LANG_CHANGE", handler);
+    }, []);
 
   useEffect(() => {
       fetch(`${API_BASE}/job/${id}/?lang=${lang}`)
@@ -27,6 +34,8 @@ export default function JobDetails() {
 
   return (
     <div style={styles.page}>
+        <Navbar />
+
       {/* NAVBAR */}
       <div style={styles.navBar}>
         <button onClick={() => navigate(-1)} style={styles.backBtn}>
