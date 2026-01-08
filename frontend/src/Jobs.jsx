@@ -1,21 +1,27 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
-const API_BASE = import.meta.env.VITE_BACKEND_URL;
+import Navbar from "./Navbar.jsx";
+const API_BASE =
 
 export default function Jobs() {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const [lang, setLang] = useState(
-    () => localStorage.getItem("JOB_LANG") || "en"
-    );
+
+  const getLang = () => localStorage.getItem("LANG") || "en";
+  const [lang, setLang] = useState(getLang());
+
 
   // Two separate states for inputs
   const [cityInput, setCityInput] = useState("");
   const [searchInput, setSearchInput] = useState("");
 
+  useEffect(() => {
+      const handler = () => setLang(getLang());
+      window.addEventListener("LANG_CHANGE", handler);
+      return () => window.removeEventListener("LANG_CHANGE", handler);
+    }, []);
 
   // ==========================================
   // AUTO SEARCH LOGIC (DEBOUNCE)
@@ -75,6 +81,7 @@ export default function Jobs() {
 
   return (
     <div style={styles.page}>
+        <Navbar />
       {/* HEADER */}
       <div style={styles.navBar}>
         <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
@@ -82,12 +89,10 @@ export default function Jobs() {
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
             </button>
             <h2 style={styles.navTitle}>
-                {lang === "en" ? "Find Jobs" : "வேலை தேடல்"}
+                {lang === "en" ? "Rk dial  Find Jobs" : "வேலை தேடல்"}
             </h2>
         </div>
-        <button onClick={toggleLanguage} style={styles.langBtn}>
-            {lang === "en" ? "தமிழ்" : "English"}
-        </button>
+
       </div>
 
       <div style={styles.container}>
@@ -186,6 +191,7 @@ const styles = {
       position: "absolute",
       left: "50%",
       transform: "translateX(-50%)",
+      fontFamily: "Noto Sans Tamil",
       margin: 0,
       fontSize: "18px",
       fontWeight: "700",
