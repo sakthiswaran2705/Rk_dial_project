@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import plansData from "./plans.json";
-             import.meta.env.VITE_BACKEND_URL;
+const API_BASE = import.meta.env.VITE_BACKEND_URL;
 /* ================= UTILS ================= */
 // Load Razorpay script dynamically if not present
 const loadRazorpayScript = () => {
@@ -93,7 +93,7 @@ export default function Plan() {
       }
 
       // 2. Create Order
-      const orderRes = await fetch("http://127.0.0.1:8000/payment/create-order/", {
+      const orderRes = await fetch(`${API_BASE}/payment/create-order/`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ amount: plan.price }),
@@ -117,7 +117,7 @@ export default function Plan() {
         handler: async function (response) {
           try {
             // 4. Verify Payment
-            const verifyRes = await fetch("http://127.0.0.1:8000/payment/verify/", {
+            const verifyRes = await fetch(`${API_BASE}/payment/verify/`, {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
               body: JSON.stringify(response),
@@ -130,7 +130,7 @@ export default function Plan() {
             }
 
             // 5. Save Success (Consider moving this logic to backend inside 'verify' to speed this up)
-            await fetch("http://127.0.0.1:8000/payment/save/", {
+            await fetch(`${API_BASE}/payment/save/`, {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
               body: JSON.stringify({
