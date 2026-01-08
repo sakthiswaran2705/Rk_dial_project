@@ -4,7 +4,6 @@ import Navbar from "./Navbar.jsx";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
-/* ---------------- MODERN STYLES SYSTEM ---------------- */
 const styles = `
   :root {
     --primary: #ff5a5f;
