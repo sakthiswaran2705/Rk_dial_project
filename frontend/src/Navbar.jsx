@@ -63,6 +63,12 @@ function Navbar() {
   const fileInputRef = useRef(null);
 
   const isHomePage = location.pathname === "/";
+  const isJobsPage = location.pathname === "/jobs";
+  const isJobDetailsPage = location.pathname.startsWith("/job/");
+  const isDashboardPage = location.pathname === "/dashboard";
+  const issettingPage = location.pathname === "/settings";
+  const ispaymentPage = location.pathname === "/payments";
+  const isloginPage = location.pathname === "/login";
 
   // ---------------------------------------------
   // 1. SYNC SEARCH INPUTS FROM URL
@@ -376,7 +382,7 @@ function Navbar() {
           </div>
 
           {/* 2. SEARCH BAR */}
-          {!isHomePage && (
+          {!isHomePage && !isJobsPage && !isJobDetailsPage && !isDashboardPage && !issettingPage && !ispaymentPage && !isloginPage && (
               <div className="nav-search-container d-none d-md-flex">
                   <div style={{flex: 1.5, position: 'relative'}}>
                       <InputGroup
