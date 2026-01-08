@@ -11,6 +11,7 @@ def send_email(to_email, subject, body):
     msg["Subject"] = subject
     msg["From"] = EMAIL_USER
     msg["To"] = to_email
+    server.set_debuglevel(1)
 
     server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT)
     server.starttls()
