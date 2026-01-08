@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import plansData from "./plans.json";
-
+             import.meta.env.VITE_BACKEND_URL;
 /* ================= UTILS ================= */
 // Load Razorpay script dynamically if not present
 const loadRazorpayScript = () => {
