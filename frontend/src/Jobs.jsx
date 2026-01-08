@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "./Navbar.jsx";
-const API_BASE =
+const API_BASE = import.meta.env.VITE_BACKEND_URL;
 
 export default function Jobs() {
   const navigate = useNavigate();
