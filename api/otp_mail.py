@@ -2,11 +2,11 @@ from fastapi import APIRouter, HTTPException, Form
 from datetime import datetime, timedelta
 import random
 import smtplib
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+from datetime import datetime, timedelta
 from api.common_urldb import db
-from api.mail_settings import EMAILADDRESS, EMAILPASSWORD
+from api.mail_settings import EMAILADDRESS
 from api.shop_owner_details import hash_password
 
 router = APIRouter()
@@ -21,33 +21,55 @@ def generate_otp():
     return str(random.randint(100000, 999999))
 
 
+from api.mail_settings import EMAILADDRESS  # admin/system mail
+from datetime import datetime, timedelta
+
 def send_otp_email(to_email: str, otp: str):
-    msg = MIMEMultipart()
-    msg["From"] = EMAILADDRESS
-    msg["To"] = to_email
-    msg["Subject"] = "Password Reset OTP"
+    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+
+    if not SENDGRID_API_KEY:
+        raise RuntimeError("SENDGRID_API_KEY missing")
+
+    subject = "Password Reset OTP – RK Dial"
 
     body = f"""
-Hello,
+    <html>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6;">
+        <p>Hello,</p>
 
-Your OTP to reset your password is:
+        <p>Your OTP to reset your password is:</p>
 
-{otp}
+        <h2 style="letter-spacing: 3px;">{otp}</h2>
 
-This OTP is valid for {OTP_EXPIRY_MINUTES} minutes.
+        <p>
+          This OTP is valid for <b>{OTP_EXPIRY_MINUTES} minutes</b>.
+        </p>
 
-If you did not request this, please ignore this email.
+        <p>
+          If you did not request this, please ignore this email.
+        </p>
 
-— RK Dial Team
-"""
+        <p>
+          — <b>RK Dial Team</b>
+        </p>
+      </body>
+    </html>
+    """
 
-    msg.attach(MIMEText(body, "plain"))
+    message = Mail(
+        from_email=EMAILADDRESS,   # ADMIN mail (verified in SendGrid)
+        to_emails=to_email,        # USER mail
+        subject=subject,
+        html_content=body
+    )
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.starttls()
-    server.login(EMAILADDRESS, EMAILPASSWORD)
-    server.send_message(msg)
-    server.quit()
+    try:
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        print("✅ OTP mail accepted by SendGrid:", response.status_code)  # 202
+    except Exception as e:
+        print("❌ OTP SendGrid error:", repr(e))
+        raise
 
 
 
