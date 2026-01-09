@@ -95,16 +95,34 @@ export default function Plan() {
       // 2. Create Order
       const orderRes = await fetch(`${API_BASE}/payment/create-order/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ amount: plan.price }),
       });
-
+      
+      if (orderRes.status === 401 || orderRes.status === 403) {
+        alert(
+          LANG === "ta"
+            ? "உங்கள் உள்நுழைவு காலாவதியானது. மீண்டும் உள்நுழையவும்."
+            : "Session expired. Please login again."
+        );
+      
+        localStorage.removeItem("ACCESS_TOKEN");
+        setProcessingId(null);
+        navigate("/login");
+        return;
+      }
+      
       const orderData = await orderRes.json();
+      
       if (!orderData.status) {
         alert("Order creation failed");
         setProcessingId(null);
         return;
       }
+
 
       // 3. Razorpay Options
       const options = {
