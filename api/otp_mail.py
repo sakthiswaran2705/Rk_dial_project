@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import random
 import smtplib
 from email.mime.multipart import MIMEMultipart
-
+import os
 from datetime import datetime, timedelta
 from api.common_urldb import db
 from api.mail_settings import EMAILADDRESS
