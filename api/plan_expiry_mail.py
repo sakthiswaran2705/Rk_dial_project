@@ -1,9 +1,17 @@
 from datetime import datetime, timedelta
 from bson import ObjectId
 from api.common_urldb import db
+
+# ❌ SMTP imports (keep file structure same, but NOT USED)
 import smtplib
 from email.mime.text import MIMEText
-from api.mail_settings import EMAILADDRESS, EMAILPASSWORD
+
+# ✅ SendGrid imports
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+import os
+
+from api.mail_settings import EMAILADDRESS, EMAILPASSWORD  # EMAILPASSWORD kept but NOT USED
 
 
 col_payments = db["payments"]
@@ -11,16 +19,22 @@ col_users = db["user"]
 
 
 FROM_EMAIL = EMAILADDRESS
-APP_PASSWORD = EMAILPASSWORD
+APP_PASSWORD = EMAILPASSWORD   # kept (not used)
 
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
+SMTP_SERVER = "smtp.gmail.com"  # kept (not used)
+SMTP_PORT = 587                # kept (not used)
+
+SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 
 
+# =================================================
+# SEND MAIL (SendGrid API – SMTP NOT USED)
+# =================================================
 def send_mail(to_email: str, subject: str, body: str):
     try:
+        # ---- OLD SMTP CODE (KEPT AS COMMENT) ----
+        """
         msg = MIMEText(body, "html")
-
         msg["From"] = FROM_EMAIL
         msg["To"] = to_email
         msg["Subject"] = subject
@@ -30,13 +44,28 @@ def send_mail(to_email: str, subject: str, body: str):
         server.login(FROM_EMAIL, APP_PASSWORD)
         server.send_message(msg)
         server.quit()
+        """
 
+        # ---- NEW SENDGRID API CODE ----
+        message = Mail(
+            from_email=FROM_EMAIL,
+            to_emails=to_email,
+            subject=subject,
+            html_content=body
+        )
 
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        sg.send(message)
+
+        print("✅ Mail sent via SendGrid to:", to_email)
 
     except Exception as e:
         print("❌ Mail error:", e)
 
 
+# =================================================
+# USER NOTIFICATION SETTINGS
+# =================================================
 def is_payment_email_enabled(user: dict) -> bool:
     settings = user.get("notification_settings")
 
@@ -48,6 +77,9 @@ def is_payment_email_enabled(user: dict) -> bool:
     return settings.get("email", True)
 
 
+# =================================================
+# PAYMENT SUCCESS MAIL
+# =================================================
 def send_payment_success_mail(user_id, plan_name, amount, expiry_date):
     try:
         uid = ObjectId(user_id) if isinstance(user_id, str) else user_id
@@ -97,7 +129,9 @@ def send_payment_success_mail(user_id, plan_name, amount, expiry_date):
     print("✅ Payment success mail sent to:", user["email"])
 
 
-
+# =================================================
+# EXPIRY MAIL
+# =================================================
 def send_expiry_mail(to_email, plan_name, expiry_date, when):
     if when == "2days":
         subject = "Your Plan Will Expire in 2 Days"
@@ -126,6 +160,9 @@ def send_expiry_mail(to_email, plan_name, expiry_date, when):
     send_mail(to_email, subject, body)
 
 
+# =================================================
+# CRON / EXPIRY CHECK
+# =================================================
 def check_plan_expiry_and_send_mail():
     now = datetime.utcnow()
 
@@ -169,7 +206,6 @@ def check_plan_expiry_and_send_mail():
                 {"$set": {"expiry_mail_2days_sent": True}}
             )
 
-        # ---------------- EXPIRY DAY ----------------
         if (
             start_today <= pay["expiry_date"] <= end_today
             and not pay.get("expiry_mail_today_sent")
