@@ -8,6 +8,10 @@ from datetime import datetime, timedelta
 from api.common_urldb import db
 from api.mail_settings import EMAILADDRESS
 from api.shop_owner_details import hash_password
+from api.mail_settings import EMAILADDRESS  # admin/system mail
+from datetime import datetime, timedelta
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail  
 
 router = APIRouter()
 col_user = db["user"]
@@ -19,10 +23,6 @@ OTP_STORE = {}
 
 def generate_otp():
     return str(random.randint(100000, 999999))
-
-
-from api.mail_settings import EMAILADDRESS  # admin/system mail
-from datetime import datetime, timedelta
 
 def send_otp_email(to_email: str, otp: str):
     SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
