@@ -13,3 +13,4 @@ cachetools
 razorpay==1.4.2
 setuptools
 redis
+sendgrid
