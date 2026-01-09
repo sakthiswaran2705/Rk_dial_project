@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
-
+from api.plan_expiry_mail import send_mail
 # Import Routers
 from api.search_shops import router as search_router
 from api.shop_owner_details import router as owner_router
@@ -58,4 +58,12 @@ app.include_router(shop_views_router)
 @app.get("/")
 def root():
     return {"message": "Multiple APIs running!"}
+@app.get("/force-test-mail")
+def force_test_mail():
+    send_mail(
+        "sakthibala2705@gmail.com",   # ungal email
+        "Render Mail Test",
+        "<b>Mail working 🎉</b>"
+    )
+    return {"ok": True}
 
