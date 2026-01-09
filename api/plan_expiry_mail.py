@@ -24,7 +24,7 @@ APP_PASSWORD = EMAILPASSWORD   # kept (not used)
 SMTP_SERVER = "smtp.gmail.com"  # kept (not used)
 SMTP_PORT = 587                # kept (not used)
 
-SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
+
 
 
 # =================================================
@@ -32,6 +32,7 @@ SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 # =================================================
 def send_mail(to_email: str, subject: str, body: str):
     try:
+        SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
         # ---- OLD SMTP CODE (KEPT AS COMMENT) ----
         """
         msg = MIMEText(body, "html")
@@ -58,6 +59,7 @@ def send_mail(to_email: str, subject: str, body: str):
         sg.send(message)
 
         print("✅ Mail sent via SendGrid to:", to_email)
+        print("DEBUG SENDGRID_API_KEY EXISTS =", bool(os.environ.get("SENDGRID_API_KEY")))
 
     except Exception as e:
         print("❌ Mail error:", e)
@@ -223,5 +225,3 @@ def check_plan_expiry_and_send_mail():
             )
 
 
-if __name__ == "__main__":
-    check_plan_expiry_and_send_mail()
