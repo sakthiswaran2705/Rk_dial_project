@@ -58,12 +58,4 @@ app.include_router(shop_views_router)
 @app.get("/")
 def root():
     return {"message": "Multiple APIs running!"}
-@app.get("/force-test-mail")
-def force_test_mail():
-    send_mail(
-        "sakthibala2705@gmail.com",   # 👈 ungal real email podunga
-        "Render Mail Test",
-        "<b>Mail working 🎉</b>"
-    )
-    return {"ok": True}
 
