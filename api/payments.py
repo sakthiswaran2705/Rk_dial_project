@@ -153,7 +153,8 @@ def save_payment(
                 "expiry_date": expiry_date,
 
                 # Flags to prevent duplication
-                "payment_success_mail_sent": True if status == "success" else False,
+                "payment_success_mail_sent": False,
+
                 "expiry_mail_2days_sent": False,
                 "expiry_mail_today_sent": False,
 
