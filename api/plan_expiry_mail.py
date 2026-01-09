@@ -2,11 +2,9 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 from api.common_urldb import db
 
-# ❌ SMTP imports (keep file structure same, but NOT USED)
 import smtplib
 from email.mime.text import MIMEText
 
-# ✅ SendGrid imports
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 import os
@@ -19,17 +17,15 @@ col_users = db["user"]
 
 
 FROM_EMAIL = EMAILADDRESS
-APP_PASSWORD = EMAILPASSWORD   # kept (not used)
+APP_PASSWORD = EMAILPASSWORD  
 
-SMTP_SERVER = "smtp.gmail.com"  # kept (not used)
-SMTP_PORT = 587                # kept (not used)
-
-
+SMTP_SERVER = "smtp.gmail.com" 
+SMTP_PORT = 587                
 
 
-# =================================================
-# SEND MAIL (SendGrid API – SMTP NOT USED)
-# =================================================
+
+
+
 def send_mail(to_email: str, subject: str, body: str):
     try:
         SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
@@ -77,9 +73,7 @@ def is_payment_email_enabled(user: dict) -> bool:
     return settings.get("email", True)
 
 
-# =================================================
 # PAYMENT SUCCESS MAIL
-# =================================================
 def send_payment_success_mail(user_id, plan_name, amount, expiry_date):
     try:
         uid = ObjectId(user_id) if isinstance(user_id, str) else user_id
@@ -129,9 +123,7 @@ def send_payment_success_mail(user_id, plan_name, amount, expiry_date):
  
 
 
-# =================================================
 # EXPIRY MAIL
-# =================================================
 def send_expiry_mail(to_email, plan_name, expiry_date, when):
     if when == "2days":
         subject = "Your Plan Will Expire in 2 Days"
@@ -160,9 +152,7 @@ def send_expiry_mail(to_email, plan_name, expiry_date, when):
     send_mail(to_email, subject, body)
 
 
-# =================================================
 # CRON / EXPIRY CHECK
-# =================================================
 def check_plan_expiry_and_send_mail():
     now = datetime.utcnow()
 
