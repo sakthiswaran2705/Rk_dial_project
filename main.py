@@ -61,7 +61,7 @@ def root():
 @app.get("/force-test-mail")
 def force_test_mail():
     send_mail(
-        "yourmail@gmail.com",   # 👈 ungal real email podunga
+        "sakthibala2705@gmail.com",   # 👈 ungal real email podunga
         "Render Mail Test",
         "<b>Mail working 🎉</b>"
     )
