@@ -2,10 +2,11 @@ import os
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 from api.mail_settings import EMAILADDRESS
-FROM_EMAIL = EMAILADDRESS          # admin / system mail
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+FROM_EMAIL = EMAILADDRESS          
+
 
 def send_email(to_email, subject, body):
+    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
     if not SENDGRID_API_KEY:
         raise RuntimeError("SENDGRID_API_KEY missing")
 
