@@ -58,16 +58,14 @@ def send_mail(to_email: str, subject: str, body: str):
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         sg.send(message)
 
-        print("✅ Mail sent via SendGrid to:", to_email)
+      
         print("DEBUG SENDGRID_API_KEY EXISTS =", bool(os.environ.get("SENDGRID_API_KEY")))
 
     except Exception as e:
         print("❌ Mail error:", e)
 
 
-# =================================================
-# USER NOTIFICATION SETTINGS
-# =================================================
+
 def is_payment_email_enabled(user: dict) -> bool:
     settings = user.get("notification_settings")
 
@@ -128,7 +126,7 @@ def send_payment_success_mail(user_id, plan_name, amount, expiry_date):
         body
     )
 
-    print("✅ Payment success mail sent to:", user["email"])
+ 
 
 
 # =================================================
