@@ -1,8 +1,8 @@
 import os
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
-
-FROM_EMAIL = os.getenv("EMAILADDRESS")          # admin / system mail
+from api.mail_settings import EMAILADDRESS
+FROM_EMAIL =           # admin / system mail
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 
 def send_email(to_email, subject, body):
