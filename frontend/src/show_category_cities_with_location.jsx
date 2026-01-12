@@ -813,7 +813,7 @@ function Val() {
                 {/* FOOTER */}
                 <footer className="text-center mt-5 pt-5 pb-5">
                     <div className="container">
-                        <h4 style={{fontWeight:800, color: 'var(--primary-dark)', letterSpacing: '-1px'}}>Rk dial</h4>
+                        <h4 style={{fontWeight:800, color: 'var(--primary-dark)', letterSpacing: '-1px'}}>Nallaangadi</h4>
                         <div className="text-muted small mt-1 mb-4">{t("Discover. Connect. Grow.")}</div>
 
                         <div className="footer-nav">
@@ -824,7 +824,7 @@ function Val() {
                             <a href="/refund" className="footer-link">{t("Cancellation & Refund Policy")}</a>
                         </div>
                         <div className="mt-4 text-muted small">
-                            © {new Date().getFullYear()} Rk dial. All rights reserved.
+                            © {new Date().getFullYear()} nallaangadi.com  All rights reserved.
                         </div>
                     </div>
                 </footer>
