@@ -48,7 +48,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_sche
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
         if payload.get("type") != "access":
-            raise HTTPException(status_code=401, detail="Invalid access token")
+            raise HTTPException(status_code=401, detail="Invalid access tokens")
 
         user_id = payload.get("user_id")
 
