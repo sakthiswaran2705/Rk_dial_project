@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from api.otp_mail import router as otp_router
 from api.notifications_setting import router as notification_settings_router
 from api.shop_views import router as shop_views_router
+from api.register_automatic import router as register_auto
 app = FastAPI(
     title="RK-DIAL API",
     description="API endpoints for RK-Dial Application",
@@ -38,6 +39,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+DOWNLOAD_DIR = PROJECT_ROOT / "downloads"
+DOWNLOAD_DIR.mkdir(exist_ok=True)
+
+
+
+app.mount(
+    "/downloads",
+    StaticFiles(directory=str(DOWNLOAD_DIR)),
+    name="downloads"
+)
 
 # Routers
 app.include_router(search_router)
@@ -52,7 +63,7 @@ app.include_router(payment_router)
 app.include_router(otp_router)
 app.include_router(notification_settings_router)
 app.include_router(shop_views_router)
-
+app.include_router(register_auto)
 # Root
 @app.get("/")
 def root():
