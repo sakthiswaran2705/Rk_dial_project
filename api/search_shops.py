@@ -107,12 +107,14 @@ def translate_dict(obj):
 # ---------------- SEARCH API ----------------
 @router.get("/shop/search/", operation_id="searchShop")
 def get_static(
-    place: str | None = Query(None),
-    name: str | None = Query(None),
-    lang: str = Query("en")
+        place: str | None = Query(None),
+        name: str | None = Query(None),
+        lang: str = Query("en"),
+        page: int = Query(1, ge=1),
+        limit: int = Query(5, ge=1, le=100)
 ):
     if not name:
-        return {"data": []}
+        return {"data": [], "page": page, "has_more": False}
 
     # ---------- INPUT NORMALIZATION ----------
     search_name = name
@@ -146,19 +148,17 @@ def get_static(
         ]
     }
 
+    # 1. Fetch ALL Raw Candidates (No Formatting yet)
     shops = list(col_shop.find(query))
-    final_output = []
+
+    # 2. Filter & Pre-Calculate Ratings
+    # We do this BEFORE translation to speed up performance significantly
+    valid_candidates = []
 
     for s in shops:
         sid = str(s["_id"])
-        shop_reviews = list(col_reviews.find({"shop_id": sid}))
 
-        avg_rating = (
-            sum(r.get("rating", 0) for r in shop_reviews) / len(shop_reviews)
-            if shop_reviews else 0
-        )
-
-        # ---------- CITY ----------
+        # Check City Filter First
         city = None
         cid = s.get("city_id")
         if ObjectId.is_valid(str(cid)):
@@ -168,7 +168,44 @@ def get_static(
             if city.get("city_name", "").lower() != place_lower:
                 continue
 
-        # ---------- CATEGORIES (WITH IMAGE PATH) ----------
+        # Get Ratings
+        shop_reviews = list(col_reviews.find({"shop_id": sid}))
+        avg_rating = (
+            sum(r.get("rating", 0) for r in shop_reviews) / len(shop_reviews)
+            if shop_reviews else 0
+        )
+
+        valid_candidates.append({
+            "shop_raw": s,
+            "city_raw": city,
+            "avg_rating": avg_rating,
+            "reviews_count": len(shop_reviews)
+        })
+
+    # 3. SORTING (By Rating DESC, then Review Count DESC)
+    valid_candidates.sort(
+        key=lambda x: (x["avg_rating"], x["reviews_count"]),
+        reverse=True
+    )
+
+    # 4. PAGINATION (Slicing)
+    total_count = len(valid_candidates)
+    start_index = (page - 1) * limit
+    end_index = start_index + limit
+
+    sliced_candidates = valid_candidates[start_index:end_index]
+    has_more = end_index < total_count
+
+    # 5. FINAL PROCESSING (Translation & Formatting only for the viewable slice)
+    final_output = []
+
+    for item in sliced_candidates:
+        s = item["shop_raw"]
+        city = item["city_raw"]
+        avg_rating = item["avg_rating"]
+        reviews_count = item["reviews_count"]
+
+        # Handle Categories
         final_categories = []
         for c in s.get("category", []):
             if ObjectId.is_valid(str(c)):
@@ -180,12 +217,11 @@ def get_static(
                 final_categories.append({
                     "_id": str(cat["_id"]),
                     "name": cat.get("name"),
-                    "category_image": cat.get("category_image")  # ✅ PATH
+                    "category_image": cat.get("category_image")
                 })
 
-        # ---------- SHOP NAME ----------
+        # Handle Shop Name
         shop_name = s.get("shop_name") or ""
-
         if lang == "ta":
             translated = translate_text_en_to_ta(shop_name)
             shop_name = (
@@ -202,7 +238,7 @@ def get_static(
             "categories": final_categories,
             "city": safe(city) if city else None,
             "avg_rating": round(avg_rating, 1),
-            "reviews_count": len(shop_reviews),
+            "reviews_count": reviews_count,
         }
 
         if lang == "ta":
@@ -210,5 +246,8 @@ def get_static(
 
         final_output.append(response_item)
 
-    final_output.sort(key=lambda x: x["avg_rating"], reverse=True)
-    return {"data": final_output}
+    return {
+        "data": final_output,
+        "page": page,
+        "has_more": has_more
+    }
