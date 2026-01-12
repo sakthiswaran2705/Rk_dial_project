@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Query
 from bson import ObjectId
-from api.common_urldb import db
+from common_urldb import db
 import re
 
-from api.translator import en_to_ta, ta_to_en
-from api.cache import get_cached, set_cache
+from translator import en_to_ta, ta_to_en
+from cache import get_cached, set_cache
 
 router = APIRouter()
 
@@ -14,7 +14,7 @@ col_category = db["category"]
 col_reviews = db["reviews"]
 
 
-
+# ---------------- SAFE OBJECT ----------------
 def safe(x):
     if isinstance(x, ObjectId):
         return str(x)
@@ -71,6 +71,7 @@ def should_translate(text: str) -> bool:
     return True
 
 
+# ---------------- TRANSLATION ----------------
 def translate_text_en_to_ta(text: str):
     if not should_translate(text):
         return text
@@ -103,113 +104,111 @@ def translate_dict(obj):
     return obj
 
 
-@router.get("/shop/search/")
-def search_shop(
-    name: str = Query(...),
+# ---------------- SEARCH API ----------------
+@router.get("/shop/search/", operation_id="searchShop")
+def get_static(
     place: str | None = Query(None),
-    lang: str = Query("en"),
-    page: int = Query(1),
-    limit: int = Query(10)
+    name: str | None = Query(None),
+    lang: str = Query("en")
 ):
-    skip = (page - 1) * limit
+    if not name:
+        return {"data": []}
+
+    # ---------- INPUT NORMALIZATION ----------
+    search_name = name
+    search_place = place
 
     if lang == "ta":
-        name = ta_to_en(name)
+        search_name = ta_to_en(name)
         if place:
-            place = ta_to_en(place)
+            search_place = ta_to_en(place)
+
+    name_lower = search_name.lower()
+    place_lower = search_place.lower() if search_place else None
 
     # ---------- CATEGORY MATCH ----------
-    matched_cat_ids = [
-        c["_id"] for c in col_category.find(
-            {"name": {"$regex": name, "$options": "i"}},
-            {"_id": 1}
-        )
-    ]
+    matched_categories = list(col_category.find({
+        "name": {"$regex": name_lower, "$options": "i"}
+    }))
+    matched_cat_ids = [c["_id"] for c in matched_categories]
 
     query = {
-        "status": "approved",
-        "$or": [
-            {"shop_name": {"$regex": name, "$options": "i"}},
-            {"keywords": {"$regex": name, "$options": "i"}},
-            {"category": {"$in": matched_cat_ids}},
-            {"category": {"$in": [str(x) for x in matched_cat_ids]}},
+        "$and": [
+            {"status": "approved"},
+            {
+                "$or": [
+                    {"shop_name": {"$regex": name_lower, "$options": "i"}},
+                    {"keywords": {"$regex": name_lower, "$options": "i"}},
+                    {"category": {"$in": matched_cat_ids}},
+                    {"category": {"$in": [str(x) for x in matched_cat_ids]}},
+                ]
+            }
         ]
     }
 
-    shops = list(
-        col_shop.find(query)
-        .skip(skip)
-        .limit(limit)
-    )
-
-    if not shops:
-        return {"data": []}
-
-    # ---------- BATCH IDS ----------
-    shop_ids = [str(s["_id"]) for s in shops]
-    city_ids = list({ObjectId(s["city_id"]) for s in shops if ObjectId.is_valid(str(s.get("city_id")))})
-
-    # ---------- REVIEWS (GROUPED) ----------
-    reviews = list(col_reviews.find({"shop_id": {"$in": shop_ids}}))
-    review_map = {}
-    for r in reviews:
-        review_map.setdefault(r["shop_id"], []).append(r)
-
-    # ---------- CITIES ----------
-    cities = {
-        str(c["_id"]): c
-        for c in col_city.find({"_id": {"$in": city_ids}})
-    }
-
-    # ---------- CATEGORIES ----------
-    all_cat_ids = set()
-    for s in shops:
-        for c in s.get("category", []):
-            if ObjectId.is_valid(str(c)):
-                all_cat_ids.add(ObjectId(c))
-
-    categories = {
-        str(c["_id"]): c
-        for c in col_category.find({"_id": {"$in": list(all_cat_ids)}})
-    }
-
-    result = []
+    shops = list(col_shop.find(query))
+    final_output = []
 
     for s in shops:
         sid = str(s["_id"])
-        shop_reviews = review_map.get(sid, [])
-        avg_rating = round(
-            sum(r.get("rating", 0) for r in shop_reviews) / len(shop_reviews),
-            1
-        ) if shop_reviews else 0
+        shop_reviews = list(col_reviews.find({"shop_id": sid}))
 
-        city = cities.get(str(s.get("city_id")))
+        avg_rating = (
+            sum(r.get("rating", 0) for r in shop_reviews) / len(shop_reviews)
+            if shop_reviews else 0
+        )
 
-        if place and city:
-            if city.get("city_name", "").lower() != place.lower():
+        # ---------- CITY ----------
+        city = None
+        cid = s.get("city_id")
+        if ObjectId.is_valid(str(cid)):
+            city = col_city.find_one({"_id": ObjectId(cid)})
+
+        if place_lower and city:
+            if city.get("city_name", "").lower() != place_lower:
                 continue
 
+        # ---------- CATEGORIES (WITH IMAGE PATH) ----------
         final_categories = []
         for c in s.get("category", []):
-            cat = categories.get(str(c))
+            if ObjectId.is_valid(str(c)):
+                cat = col_category.find_one({"_id": ObjectId(c)})
+            else:
+                cat = col_category.find_one({"name": c})
+
             if cat:
                 final_categories.append({
                     "_id": str(cat["_id"]),
-                    "name": cat["name"],
-                    "category_image": cat.get("category_image")
+                    "name": cat.get("name"),
+                    "category_image": cat.get("category_image")  # ✅ PATH
                 })
 
-        shop_name = s.get("shop_name", "")
-        if lang == "ta":
-            shop_name = translate_text_en_to_ta(shop_name)
+        # ---------- SHOP NAME ----------
+        shop_name = s.get("shop_name") or ""
 
-        result.append({
-            "shop": safe(s),
+        if lang == "ta":
+            translated = translate_text_en_to_ta(shop_name)
+            shop_name = (
+                phonetic_tamil(shop_name)
+                if translated.strip().lower() == shop_name.strip().lower()
+                else translated
+            )
+
+        shop_data = safe(s)
+        shop_data["shop_name"] = shop_name
+
+        response_item = {
+            "shop": shop_data,
             "categories": final_categories,
             "city": safe(city) if city else None,
-            "avg_rating": avg_rating,
-            "reviews_count": len(shop_reviews)
-        })
+            "avg_rating": round(avg_rating, 1),
+            "reviews_count": len(shop_reviews),
+        }
 
-    result.sort(key=lambda x: x["avg_rating"], reverse=True)
-    return {"data": result}
+        if lang == "ta":
+            response_item = translate_dict(response_item)
+
+        final_output.append(response_item)
+
+    final_output.sort(key=lambda x: x["avg_rating"], reverse=True)
+    return {"data": final_output}
