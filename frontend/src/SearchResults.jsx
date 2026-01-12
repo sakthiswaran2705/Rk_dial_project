@@ -4,6 +4,7 @@ import Navbar from "./Navbar.jsx";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
+/* ---------------- MODERN STYLES SYSTEM ---------------- */
 const styles = `
   :root {
     --primary: #ff5a5f;
@@ -125,6 +126,13 @@ const styles = `
     margin-bottom: 15px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loader-small {
+    width: 24px;
+    height: 24px;
+    border-width: 2px;
+    margin-bottom: 0;
+  }
 
   /* ---------- CARD DESIGN ---------- */
   .card {
@@ -255,38 +263,84 @@ export default function SearchResults() {
   const city = searchParams.get("city") || "City";
   const lang = localStorage.getItem("LANG") || "en";
 
+  // State
   const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    fetch(`${BACKEND_URL}`).catch(() => {});
-  }, []);
+  const [loading, setLoading] = useState(true); // First load
+  const [loadingMore, setLoadingMore] = useState(false); // Scroll load
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
 
-  useEffect(() => {
-    const fetchResults = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(
-          `${BACKEND_URL}/shop/search/?name=${encodeURIComponent(category)}&place=${encodeURIComponent(city)}&lang=${lang}`
-        );
+  // --- Fetch Function ---
+  const fetchResults = async (pageNum, isInitial = false) => {
+    if (isInitial) setLoading(true);
+    else setLoadingMore(true);
 
-        const json = await res.json();
-        const data = json.data || [];
-        setResults(data);
+    try {
+      const res = await fetch(
+        `${BACKEND_URL}/shop/search/?name=${encodeURIComponent(category)}&place=${encodeURIComponent(city)}&lang=${lang}&page=${pageNum}`
+      );
+      const json = await res.json();
+      const newData = json.data || [];
+      const backendHasMore = json.has_more;
 
-        if(data.length > 0) {
-            // ⭐ FIXED: Key must match what ShopDetails expects
-            sessionStorage.setItem("SEARCH_CONTEXT_SHOPS", JSON.stringify(data));
+      if (isInitial) {
+        setResults(newData);
+        if (newData.length > 0) {
+          sessionStorage.setItem("SEARCH_CONTEXT_SHOPS", JSON.stringify(newData));
         }
+      } else {
+        setResults((prev) => {
+            const updated = [...prev, ...newData];
+            sessionStorage.setItem("SEARCH_CONTEXT_SHOPS", JSON.stringify(updated));
+            return updated;
+        });
+      }
+      
+      setHasMore(backendHasMore);
 
-      } catch (error) {
-        console.error("Search failed", error);
-      } finally {
-        setLoading(false);
+    } catch (error) {
+      console.error("Search failed", error);
+    } finally {
+      if (isInitial) setLoading(false);
+      else setLoadingMore(false);
+    }
+  };
+
+  // --- Effect 1: Filter Change (Reset) ---
+  useEffect(() => {
+    setPage(1);
+    setHasMore(true);
+    setResults([]);
+    fetchResults(1, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, city, lang]);
+
+  // --- Effect 2: Page Change (Load More) ---
+  useEffect(() => {
+    if (page > 1) {
+      fetchResults(page, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+  // --- Effect 3: Scroll Listener ---
+  useEffect(() => {
+    const handleScroll = () => {
+      // Logic: Near bottom (100px)
+      if (
+        window.innerHeight + document.documentElement.scrollTop >=
+        document.documentElement.offsetHeight - 100
+      ) {
+        if (!loading && !loadingMore && hasMore) {
+          setPage((prev) => prev + 1);
+        }
       }
     };
 
-    if (category && city) fetchResults();
-  }, [category, city, lang]);
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [loading, loadingMore, hasMore]);
+
 
   // --- Handlers ---
   const handleCall = (e, num) => {
@@ -302,15 +356,12 @@ export default function SearchResults() {
   const handleMap = (e, name, cityLocation) => {
     e.stopPropagation();
     const query = `${name}, ${cityLocation}`;
-    // ⭐ FIXED: Correct Google Maps Search URL
     window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`, "_blank");
   };
 
   const navigateToShop = (item) => {
     const shop = item.shop || item.shop?.shop || item;
     const cityObj = item.city || shop.city || {};
-    // Note: We don't need to save SELECTED_SHOP here necessarily because
-    // ShopDetails handles it, but passing state is good.
     navigate("/shop", { state: { shop, city: cityObj } });
   };
 
@@ -338,7 +389,7 @@ export default function SearchResults() {
       {/* MAIN CONTENT */}
       <div className="container">
 
-        {/* Loading State */}
+        {/* Initial Loading */}
         {loading && (
           <div className="state-container">
             <div className="loading-pulse"></div>
@@ -346,7 +397,7 @@ export default function SearchResults() {
           </div>
         )}
 
-        {/* No Results State */}
+        {/* No Results */}
         {!loading && results.length === 0 && (
           <div className="state-container">
              <h3>No results found 😕</h3>
@@ -369,7 +420,6 @@ export default function SearchResults() {
               } else if (s.media && s.media.length > 0 && s.media[0].path) {
                 imgUrl = `${BACKEND_URL}/${s.media[0].path}`;
               }
-
 
               const rating = item.avg_rating ? parseFloat(item.avg_rating).toFixed(1) : "New";
 
@@ -422,6 +472,14 @@ export default function SearchResults() {
               );
             })}
         </div>
+
+        {/* Infinite Scroll Loader */}
+        {loadingMore && (
+           <div style={{ textAlign: "center", padding: "20px", width: "100%", marginTop: "10px" }}>
+             <div className="loading-pulse loader-small"></div>
+           </div>
+        )}
+
       </div>
     </>
   );
