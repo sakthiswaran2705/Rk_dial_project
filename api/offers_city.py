@@ -2,9 +2,9 @@ import math
 import requests
 from fastapi import APIRouter, Query
 from bson import ObjectId
-from api.common_urldb import db
-from api.translator import ta_to_en, en_to_ta
-from api.cache import get_cached, set_cache
+from common_urldb import db
+from translator import ta_to_en, en_to_ta
+from cache import get_cached, set_cache
 
 router = APIRouter()
 
@@ -25,9 +25,11 @@ def safe(doc):
 
 # ---------------- TRANSLATION HELPERS ----------------
 def translate_to_en_logic(text: str):
-    if not text: return text
+    if not text:
+        return text
     cached = get_cached(f"ta_en:{text}")
-    if cached: return cached
+    if cached:
+        return cached
     try:
         translated = ta_to_en(text)
         set_cache(f"ta_en:{text}", translated)
@@ -37,9 +39,11 @@ def translate_to_en_logic(text: str):
 
 
 def translate_to_ta_logic(text: str):
-    if not text: return text
+    if not text:
+        return text
     cached = get_cached(f"en_ta:{text}")
-    if cached: return cached
+    if cached:
+        return cached
     try:
         translated = en_to_ta(text)
         set_cache(f"en_ta:{text}", translated)
@@ -48,57 +52,75 @@ def translate_to_ta_logic(text: str):
         return text
 
 
-# ---------------- NEW HELPERS: GEO & DISTANCE ----------------
+# ---------------- GEO HELPERS ----------------
 def get_coordinates_from_osm(city_name):
-    # Check cache first
     cache_key = f"geo_coords:{city_name.lower()}"
     cached = get_cached(cache_key)
-    if cached: return cached["lat"], cached["lng"]
+    if cached:
+        return cached["lat"], cached["lng"]
 
     try:
         url = "https://nominatim.openstreetmap.org/search"
-        params = {"q": f"{city_name}, Tamil Nadu", "format": "json", "limit": 1}
+        params = {
+            "q": f"{city_name}, Tamil Nadu",
+            "format": "json",
+            "limit": 1
+        }
         headers = {"User-Agent": "MyLocalApp/1.0"}
         resp = requests.get(url, params=params, headers=headers, timeout=3)
         data = resp.json()
+
         if data:
-            lat, lng = float(data[0]["lat"]), float(data[0]["lon"])
+            lat = float(data[0]["lat"])
+            lng = float(data[0]["lon"])
             set_cache(cache_key, {"lat": lat, "lng": lng})
             return lat, lng
     except:
-        return None, None
+        pass
+
     return None, None
 
 
+# ---------------- DISTANCE (SAFE) ----------------
 def calculate_distance(lat1, lon1, lat2, lon2):
-    R = 6371.0  # Earth radius in km
+    if None in (lat1, lon11:=lon1, lat2, lon2):
+        return None
+
+    lat1, lon1, lat2, lon2 = map(float, (lat1, lon1, lat2, lon2))
+
+    R = 6371.0
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = (math.sin(dlat / 2) * math.sin(dlat / 2) +
-         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
-         math.sin(dlon / 2) * math.sin(dlon / 2))
+
+    a = (
+        math.sin(dlat / 2) ** 2 +
+        math.cos(math.radians(lat1)) *
+        math.cos(math.radians(lat2)) *
+        math.sin(dlon / 2) ** 2
+    )
+
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
 
-# ---------------- HELPER: GET SLIDES (Reuse Logic) ----------------
+# ---------------- SLIDES LOGIC ----------------
 def get_slides_logic(city_doc, lang):
-    """
-    Extracts offers/slides for a given city document.
-    Returns (slides_list, safe_city_doc)
-    """
-    if not city_doc: return [], None
+    if not city_doc:
+        return [], None
 
     city_id = str(city_doc["_id"])
     final_city_safe = safe(city_doc)
 
     if lang == "ta":
-        final_city_safe["city_name"] = translate_to_ta_logic(final_city_safe.get("city_name", ""))
+        final_city_safe["city_name"] = translate_to_ta_logic(
+            final_city_safe.get("city_name", "")
+        )
 
     shops = list(col_shop.find({"city_id": city_id}))
-    if not shops: return [], final_city_safe
+    if not shops:
+        return [], final_city_safe
 
-    local_slides = []
+    slides = []
 
     for shop in shops:
         shop_id = str(shop["_id"])
@@ -110,16 +132,19 @@ def get_slides_logic(city_doc, lang):
             shop_safe["address"] = translate_to_ta_logic(shop_safe.get("address", ""))
 
         offer_doc = col_offers.find_one({"shop_id": shop_id})
-        if not offer_doc: continue
+        if not offer_doc:
+            continue
 
         for off in offer_doc.get("offers", []):
-            if off.get("status") != "approved": continue
+            if off.get("status") != "approved":
+                continue
 
             media_path = off.get("media_path")
             media_type = off.get("media_type")
-            if not media_path or not media_type: continue
+            if not media_path or not media_type:
+                continue
 
-            local_slides.append({
+            slides.append({
                 "shop_id": shop_id,
                 "shop": shop_safe,
                 "city": final_city_safe,
@@ -130,26 +155,22 @@ def get_slides_logic(city_doc, lang):
                 "path": media_path
             })
 
-            if len(local_slides) == 3: break
-        if len(local_slides) == 3: break
+            if len(slides) == 3:
+                break
 
-    return local_slides, final_city_safe
+        if len(slides) == 3:
+            break
+
+    return slides, final_city_safe
 
 
-@router.get(
-    "/offers/{city}/",
-    operation_id="getOffersByCity",
-    summary="Get offers by city"
-)
-def get_offers(
-        city: str,
-        lang: str = Query("en")
-):
-    # ---------- CITY SEARCH ----------
+# ---------------- API ----------------
+@router.get("/offers/{city}/", summary="Get offers by city")
+def get_offers(city: str, lang: str = Query("en")):
+
     raw_city = city.strip()
     search_city = translate_to_en_logic(raw_city) if lang == "ta" else raw_city
 
-    # 1. Try finding the exact city
     city_list = list(col_city.find({
         "city_name": {"$regex": f"^{search_city}$", "$options": "i"}
     }))
@@ -158,70 +179,70 @@ def get_offers(
     final_city = None
     is_nearby = False
 
-    # 2. Check shops in the exact city
+    # ---------- EXACT CITY ----------
     if city_list:
         for c in city_list:
             cid = str(c["_id"])
             if col_shop.find_one({"city_id": cid}):
-                # Found a valid city with shops
                 slides, final_city = get_slides_logic(c, lang)
                 if slides:
                     break
 
-    # ---------- FALLBACK: NEARBY CHECK (If no slides found) ----------
+    # ---------- NEARBY FALLBACK ----------
     if not slides:
-        user_lat, user_lng = None, None
+        user_lat = None
+        user_lng = None
 
-        # A. If city exists in DB but has no offers -> use its Lat/Lng
-        if city_list and "lat" in city_list[0]:
+        if city_list:
             user_lat = city_list[0].get("lat")
             user_lng = city_list[0].get("lng")
-
-        # B. If city NOT in DB -> Get Lat/Lng from Internet (OSM)
-        elif not city_list:
+        else:
             user_lat, user_lng = get_coordinates_from_osm(search_city)
 
-        # C. If we have coordinates, find nearest city with offers
-        if user_lat and user_lng:
-            # Get all DB cities with coordinates
+        if user_lat is not None and user_lng is not None:
+
             all_cities = list(col_city.find({
-                "lat": {"$exists": True},
-                "lng": {"$exists": True}
+                "lat": {"$ne": None},
+                "lng": {"$ne": None}
             }))
 
             cities_dist = []
+
             for db_c in all_cities:
-                # Calculate distance
-                d = calculate_distance(user_lat, user_lng, db_c["lat"], db_c["lng"])
+                d = calculate_distance(
+                    user_lat,
+                    user_lng,
+                    db_c.get("lat"),
+                    db_c.get("lng")
+                )
+
+                if d is None:
+                    continue
+
                 cities_dist.append((d, db_c))
 
-            # Sort by distance (nearest first)
             cities_dist.sort(key=lambda x: x[0])
 
-            # Check closest cities within 25km
             for dist, nearby_city in cities_dist:
-                if dist > 25.0:  # Strict 25km limit
+                if dist > 25:
                     break
 
-                # Try getting slides for this nearby city
                 n_slides, n_city = get_slides_logic(nearby_city, lang)
-
                 if n_slides:
                     slides = n_slides
                     final_city = n_city
                     is_nearby = True
-                    # Optional: Add distance to response
                     final_city["distance_km"] = round(dist, 1)
                     break
 
-    # ---------- FINAL RESPONSE ----------
+    # ---------- RESPONSE ----------
     if not slides:
         msg = "No offers found in this area (within 25km)"
         if lang == "ta":
-            msg = translate_to_ta_logic("No offers found in this area (within 25km)")
+            msg = translate_to_ta_logic(msg)
 
         return {
-            "status": True,  # Keep true so frontend doesn't break, just empty slides
+            "status": True,
             "slides": [],
             "message": msg
         }
