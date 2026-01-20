@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion"; // Import Framer Motion
+import { Icon } from "@blueprintjs/core"; // Import Icon
 import plansData from "./plans.json";
-const API_BASE = import.meta.env.VITE_BACKEND_URL;
+import Navbar from "./Navbar.jsx";
+
 /* ================= UTILS ================= */
 // Load Razorpay script dynamically if not present
 const loadRazorpayScript = () => {
@@ -25,14 +28,13 @@ const LANG = localStorage.getItem("LANG") || "en";
 const TXT = {
   title: { en: "Choose a Plan", ta: "ஒரு திட்டத்தை தேர்வு செய்யுங்கள்" },
   subtitle: {
-    en: "Select the RK Dial plan and boost your business visibility.",
-    ta: "RK Dial திட்டத்தை தேர்வு செய்து உங்கள் வணிகத்தை அதிகம் காணப்படச் செய்யுங்கள்.",
+    en: "Select the Nalla Angadi plan and boost your business visibility.",
+    ta: "நல்ல அங்காடி திட்டத்தைத் தேர்ந்தெடுத்து உங்கள் வணிகத் தெரிவுநிலையை அதிகரிக்கவும்.",
   },
-  back: { en: "← Back", ta: "← பின்செல்ல" },
   chooseSilver: { en: "Choose Silver", ta: "சில்வர் தேர்வு" },
   choosePlatinum: { en: "Choose Platinum", ta: "பிளாட்டினம் தேர்வு" },
   chooseGold: { en: "Choose Gold", ta: "கோல்ட் தேர்வு" },
-  processing: { en: "Processing...", ta: "செயலாக்குகிறது..." }, // Added Processing Text
+  processing: { en: "Processing...", ta: "செயலாக்குகிறது..." },
   includes: { en: "Includes:", ta: "இதில் அடங்கும்:" },
   features: {
     listed: { en: "✔ Listed in Search", ta: "✔ தேடலில் காண்பிக்கப்படும்" },
@@ -46,7 +48,7 @@ const TXT = {
     vis2: { en: "✔ 2x Visibility", ta: "✔ 2 மடங்கு காண்பிப்பு" },
     ads: { en: "✔ Ads Posting Access", ta: "✔ விளம்பர பதிவு அனுமதி" },
   },
-  benefitsTitle: { en: "RK Dial Helps You Grow Your Business", ta: "RK Dial உங்கள் வணிக வளர்ச்சிக்கு உதவுகிறது" },
+  benefitsTitle: { en: "Nalla Angadi Helps You Grow Your Business", ta: "நல்ல அங்காடி உங்கள் வணிக வளர்ச்சிக்கு உதவுகிறது" },
   benefit1Title: { en: "Increase Daily Visibility", ta: "தினசரி காணப்படும் அளவு அதிகரிப்பு" },
   benefit1Text: { en: "Show your business to new users daily.", ta: "உங்கள் வணிகத்தை தினமும் புதிய பயனர்களுக்கு காட்டுங்கள்." },
   benefit2Title: { en: "Grow Revenue", ta: "வருமானம் அதிகரிக்க" },
@@ -56,16 +58,40 @@ const TXT = {
   successTitle: { en: "Payment Successful!", ta: "கட்டணம் வெற்றிகரமாக செலுத்தப்பட்டது!" },
   successMsg: { en: "Your subscription is now active.", ta: "உங்கள் சந்தா இப்போது செயலில் உள்ளது." },
   continueBtn: { en: "Continue to Dashboard", ta: "முகப்புக்குச் செல்" },
-  transId: { en: "Transaction ID:", ta: "பரிவர்த்தனை எண்:" }
+  transId: { en: "Transaction ID:", ta: "பரிவர்த்தனை எண்:" },
+  loginReqTitle: { en: "Login Required", ta: "உள்நுழைவு தேவை" },
+  loginReqMsg: { en: "Please login to purchase a plan. Click here to login.", ta: "திட்டத்தை வாங்க உள்நுழையவும். உள்நுழைய இங்கே கிளிக் செய்யவும்." }
+};
+
+// --- POPUP VARIANTS (Same as Navbar) ---
+const popupVariants = {
+    initial: { opacity: 0, y: -50, scale: 0.9 },
+    animate: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 300, damping: 20 } },
+    exit: { opacity: 0, y: -20, scale: 0.9, transition: { duration: 0.2 } }
 };
 
 export default function Plan() {
   const navigate = useNavigate();
+  const location = useLocation(); // To track where we are
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [paymentDetails, setPaymentDetails] = useState(null);
 
-  // Track which plan is currently processing (to show loading spinner on specific button)
+  // Track which plan is currently processing
   const [processingId, setProcessingId] = useState(null);
+
+  // --- POPUP STATE ---
+  const [popup, setPopup] = useState(null);
+
+  // Modified showPopup to accept an optional Action callback
+  const showPopup = (type, message, title = "", action = null) => {
+      setPopup({ type, message, title, action });
+      // If there is an action (like login), we give them more time or don't auto-hide immediately
+      const duration = action ? 5000 : 3000;
+      setTimeout(() => {
+          // Only auto-close if it hasn't been replaced by another popup
+          setPopup(prev => (prev && prev.message === message ? null : prev));
+      }, duration);
+  };
 
   // Load script on mount
   useEffect(() => {
@@ -76,8 +102,14 @@ export default function Plan() {
   const handlePlanPayment = async (plan) => {
     const token = localStorage.getItem("ACCESS_TOKEN");
 
+    // --- CHECK LOGIN STATUS ---
     if (!token) {
-      alert("Please login to continue payment");
+      showPopup(
+        "warning",
+        TXT.loginReqMsg[LANG],
+        TXT.loginReqTitle[LANG],
+        () => navigate("/login", { state: { from: location.pathname } }) // Redirect to login, remembering return path
+      );
       return;
     }
 
@@ -87,42 +119,24 @@ export default function Plan() {
       // 1. Ensure Script is Loaded
       const res = await loadRazorpayScript();
       if (!res) {
-        alert("Razorpay SDK failed to load. Are you online?");
+        showPopup("error", "Razorpay SDK failed to load. Are you online?", "Network Error");
         setProcessingId(null);
         return;
       }
 
       // 2. Create Order
-      const orderRes = await fetch(`${API_BASE}/payment/create-order/`, {
+      const orderRes = await fetch("http://127.0.0.1:8000/payment/create-order/", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ amount: plan.price }),
       });
-      
-      if (orderRes.status === 401 || orderRes.status === 403) {
-        alert(
-          LANG === "ta"
-            ? "உங்கள் உள்நுழைவு காலாவதியானது. மீண்டும் உள்நுழையவும்."
-            : "Session expired. Please login again."
-        );
-      
-        localStorage.removeItem("ACCESS_TOKEN");
-        setProcessingId(null);
-        navigate("/login");
-        return;
-      }
-      
-      const orderData = await orderRes.json();
-      
-      if (!orderData.status) {
-        alert("Order creation failed");
-        setProcessingId(null);
-        return;
-      }
 
+      const orderData = await orderRes.json();
+      if (!orderData.status) {
+        showPopup("error", "Order creation failed", "Error");
+        setProcessingId(null);
+        return;
+      }
 
       // 3. Razorpay Options
       const options = {
@@ -135,7 +149,7 @@ export default function Plan() {
         handler: async function (response) {
           try {
             // 4. Verify Payment
-            const verifyRes = await fetch(`${API_BASE}/payment/verify/`, {
+            const verifyRes = await fetch("http://127.0.0.1:8000/payment/verify/", {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
               body: JSON.stringify(response),
@@ -143,12 +157,12 @@ export default function Plan() {
 
             const verifyData = await verifyRes.json();
             if (!verifyData.status) {
-              alert("Payment verification failed");
+              showPopup("error", "Payment verification failed", "Failed");
               return;
             }
 
-            // 5. Save Success (Consider moving this logic to backend inside 'verify' to speed this up)
-            await fetch(`${API_BASE}/payment/save/`, {
+            // 5. Save Success
+            await fetch("http://127.0.0.1:8000/payment/save/", {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
               body: JSON.stringify({
@@ -169,18 +183,17 @@ export default function Plan() {
             setShowSuccessModal(true);
           } catch (error) {
             console.error(error);
-            alert("Error saving payment. Please contact support.");
+            showPopup("error", "Error saving payment. Contact support.", "Error");
           } finally {
-            setProcessingId(null); // STOP LOADING
+            setProcessingId(null);
           }
         },
         modal: {
           ondismiss: function () {
-            setProcessingId(null); // STOP LOADING IF CLOSED
-            // alert("Payment cancelled"); // Optional: Removed annoying alert
+            setProcessingId(null);
           },
         },
-        theme: { color: "#000000" },
+        theme: { color: "#3B82F6" },
       };
 
       const rzp = new window.Razorpay(options);
@@ -188,7 +201,7 @@ export default function Plan() {
 
     } catch (err) {
       console.error(err);
-      alert("Server error");
+      showPopup("error", "Server connection failed", "Server Error");
       setProcessingId(null);
     }
   };
@@ -198,16 +211,88 @@ export default function Plan() {
     navigate("/dashboard");
   };
 
+  // Helper to handle popup click
+  const handlePopupClick = () => {
+      if (popup && popup.action) {
+          popup.action();
+          setPopup(null);
+      } else {
+          setPopup(null);
+      }
+  };
+
   return (
     <div style={styles.page}>
 
-      {/* CSS MOVED TO STYLE TAG IN HEAD OR SEPARATE FILE IS BETTER, BUT THIS WORKS */}
+      <div style={styles.navContainer}>
+        <Navbar variant="plan" />
+      </div>
+
       <style>{`
-        @keyframes fadeIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         .success-modal { animation: fadeIn 0.3s ease-out forwards; }
+        
+        :root {
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --text-dark: #1e293b;
+        }
+
+        /* POPUP STYLES */
+        .custom-popup-toast {
+            position: fixed; top: 20px; right: 20px; z-index: 999999;
+            min-width: 320px; max-width: 400px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px); border-radius: 16px; padding: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.8);
+            display: flex; align-items: flex-start; gap: 12px;
+            cursor: pointer;
+        }
+        .popup-icon-box {
+            width: 40px; height: 40px; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .popup-icon-box.success { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+        .popup-icon-box.error { background: rgba(239, 68, 68, 0.15); color: var(--error); }
+        .popup-icon-box.warning { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+        .popup-icon-box.info { background: rgba(59, 130, 246, 0.15); color: var(--info); }
+        .popup-content h5 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text-dark); margin-bottom: 2px; }
+        .popup-content p { margin: 0; font-size: 13px; color: #64748b; line-height: 1.4; font-weight: 500; }
+        .popup-close { position: absolute; top: 10px; right: 10px; cursor: pointer; color: #94a3b8; }
+        
+        @media (max-width: 768px) {
+             .custom-popup-toast { top: 10px; left: 10px; right: 10px; min-width: auto; max-width: 100%; }
+        }
       `}</style>
 
-      {/* SUCCESS MODAL */}
+      {/* POPUP TOAST COMPONENT */}
+      <AnimatePresence>
+        {popup && (
+            <motion.div
+                className="custom-popup-toast"
+                variants={popupVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                onClick={handlePopupClick} // Click triggers action (login)
+            >
+                <div className={`popup-icon-box ${popup.type}`}>
+                    <Icon icon={popup.type === 'success' ? 'tick-circle' : popup.type === 'error' ? 'error' : 'warning-sign'} iconSize={24} />
+                </div>
+                <div className="popup-content">
+                    {popup.title && <h5>{popup.title}</h5>}
+                    <p>{popup.message}</p>
+                </div>
+                <div className="popup-close" onClick={(e) => { e.stopPropagation(); setPopup(null); }}>
+                    <Icon icon="cross" size={16} />
+                </div>
+            </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* SUCCESS MODAL (Transaction details) */}
       {showSuccessModal && (
         <div style={styles.modalOverlay}>
           <div className="success-modal" style={styles.modalCard}>
@@ -221,9 +306,9 @@ export default function Plan() {
             <p style={styles.modalText}>{TXT.successMsg[LANG]}</p>
             {paymentDetails && (
               <div style={styles.transactionBox}>
-                <span style={{opacity: 0.6, fontSize: "13px"}}>{TXT.transId[LANG]}</span>
+                <span style={{opacity: 0.6, fontSize: "13px", color: "#666"}}>{TXT.transId[LANG]}</span>
                 <br />
-                <span style={{fontFamily: "monospace", fontSize: "15px", color: "#fff"}}>
+                <span style={{fontFamily: "monospace", fontSize: "15px", color: "#333", fontWeight: "600"}}>
                   {paymentDetails.id}
                 </span>
               </div>
@@ -235,110 +320,118 @@ export default function Plan() {
         </div>
       )}
 
-      {/* BACK BUTTON */}
-      <div style={headerStyles.header}>
-          <button
-            style={headerStyles.backBtn}
-            onClick={() => navigate(-1)}
-          >
-            ← Back
-          </button>
+      {/* HEADER */}
+    <div
+        style={{
+          ...headerStyles.header,
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
+        <div style={{ width: 60 }}></div>
 
-          <h2 style={headerStyles.title}>
-            RK Dial Plans
-          </h2>
+        <h2 style={{ ...headerStyles.title, flex: 1, textAlign: "center" }}>
+          Nalla Angadi Plans
+        </h2>
 
-          <div style={{ width: 60 }}></div>
-        </div>
-
-      {/* TITLE */}
-      <h1 style={styles.title}>{TXT.title[LANG]}</h1>
-      <p style={styles.subtitle}>{TXT.subtitle[LANG]}</p>
-
-      {/* PLANS GRID */}
-      <div style={styles.planRow}>
-        {plansData.plans.map((plan) => {
-          // Dynamic Styling Logic
-          const isSilver = plan.id === "silver";
-          const isPlatinum = plan.id === "platinum";
-
-          let cardStyle = styles.cardGold;
-          let badgeStyle = styles.badgeGold;
-          let priceStyle = styles.priceGold;
-          let buttonStyle = styles.startGold;
-          let dividerStyle = styles.dividerGold;
-
-          if (isSilver) {
-            cardStyle = styles.cardSilver;
-            badgeStyle = styles.badgeSilver;
-            priceStyle = styles.priceSilver;
-            buttonStyle = styles.startSilver;
-            dividerStyle = styles.dividerSilver;
-          } else if (isPlatinum) {
-            cardStyle = styles.cardPlatinum;
-            badgeStyle = styles.badgePlatinum;
-            priceStyle = styles.pricePlatinum;
-            buttonStyle = styles.startPlatinum;
-            dividerStyle = styles.dividerPlatinum;
-          }
-
-          const isProcessing = processingId === plan.id;
-          const isAnyProcessing = processingId !== null;
-
-          return (
-            <div key={plan.id} style={cardStyle}>
-              <div style={badgeStyle}>{plan.badge}</div>
-              <h2 style={styles.planName}>{plan.name[LANG]}</h2>
-              <p style={styles.planType}>{plan.type[LANG]}</p>
-              <h1 style={priceStyle}>
-                ₹{plan.price}{" "}
-                <span style={styles.priceMonth}>{plan.period[LANG]}</span>
-              </h1>
-
-              <button
-                style={{
-                  ...buttonStyle,
-                  opacity: isAnyProcessing ? 0.6 : 1,
-                  cursor: isAnyProcessing ? "not-allowed" : "pointer"
-                }}
-                onClick={() => !isAnyProcessing && handlePlanPayment(plan)}
-                disabled={isAnyProcessing}
-              >
-                {isProcessing ? TXT.processing[LANG] : TXT[`choose${plan.badge}`][LANG]}
-              </button>
-
-              <div style={dividerStyle}></div>
-              <h3 style={styles.includesTitle}>{TXT.includes[LANG]}</h3>
-              <p style={{ marginBottom: "15px" }}>{plan.dayPrice}</p>
-              <ul style={{ listStyle: "none", padding: 0 }}>
-                {plan.features.map((f) => (
-                  <li key={f} style={styles.featureItem}>
-                    {TXT.features[f][LANG]}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          );
-        })}
+        <div style={{ width: 60 }}></div>
       </div>
 
-      {/* BENEFITS SECTION */}
-      <h2 style={benefitStyles.heading}>{TXT.benefitsTitle[LANG]}</h2>
-      <div style={benefitStyles.container}>
-        <div style={benefitStyles.card}>
-          <div style={benefitStyles.icon}>👁️</div>
-          <h3 style={benefitStyles.title}>{TXT.benefit1Title[LANG]}</h3>
-          <p style={benefitStyles.text}>{TXT.benefit1Text[LANG]}</p>
+
+      {/* MAIN CONTENT CONTAINER */}
+      <div style={styles.contentContainer}>
+        {/* TITLE */}
+        <h1 style={styles.title}>{TXT.title[LANG]}</h1>
+        <p style={styles.subtitle}>{TXT.subtitle[LANG]}</p>
+
+        {/* PLANS GRID */}
+        <div style={styles.planRow}>
+          {plansData.plans.map((plan) => {
+            // Dynamic Styling Logic
+            const isSilver = plan.id === "silver";
+            const isPlatinum = plan.id === "platinum";
+
+            let cardStyle = styles.cardGold;
+            let badgeStyle = styles.badgeGold;
+            let priceStyle = styles.priceGold;
+            let buttonStyle = styles.startGold;
+            let dividerStyle = styles.dividerGold;
+            let featuresStyle = styles.featuresGold;
+
+            if (isSilver) {
+              cardStyle = styles.cardSilver;
+              badgeStyle = styles.badgeSilver;
+              priceStyle = styles.priceSilver;
+              buttonStyle = styles.startSilver;
+              dividerStyle = styles.dividerSilver;
+              featuresStyle = styles.featuresSilver;
+            } else if (isPlatinum) {
+              cardStyle = styles.cardPlatinum;
+              badgeStyle = styles.badgePlatinum;
+              priceStyle = styles.pricePlatinum;
+              buttonStyle = styles.startPlatinum;
+              dividerStyle = styles.dividerPlatinum;
+              featuresStyle = styles.featuresPlatinum;
+            }
+
+            const isProcessing = processingId === plan.id;
+            const isAnyProcessing = processingId !== null;
+
+            return (
+              <div key={plan.id} style={cardStyle}>
+                <div style={badgeStyle}>{plan.badge}</div>
+                <h2 style={styles.planName}>{plan.name[LANG]}</h2>
+                <p style={styles.planType}>{plan.type[LANG]}</p>
+                <h1 style={priceStyle}>
+                  ₹{plan.price}{" "}
+                  <span style={styles.priceMonth}>{plan.period[LANG]}</span>
+                </h1>
+
+                <button
+                  style={{
+                    ...buttonStyle,
+                    opacity: isAnyProcessing ? 0.6 : 1,
+                    cursor: isAnyProcessing ? "not-allowed" : "pointer"
+                  }}
+                  onClick={() => !isAnyProcessing && handlePlanPayment(plan)}
+                  disabled={isAnyProcessing}
+                >
+                  {isProcessing ? TXT.processing[LANG] : TXT[`choose${plan.badge}`][LANG]}
+                </button>
+
+                <div style={dividerStyle}></div>
+                <h3 style={styles.includesTitle}>{TXT.includes[LANG]}</h3>
+                <p style={{ marginBottom: "15px", fontWeight: "500", opacity: 0.8 }}>{plan.dayPrice}</p>
+                <ul style={{ listStyle: "none", padding: 0 }}>
+                  {plan.features.map((f) => (
+                    <li key={f} style={{...styles.featureItem, ...featuresStyle}}>
+                      {TXT.features[f][LANG]}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </div>
-        <div style={benefitStyles.card}>
-          <div style={benefitStyles.icon}>📈</div>
-          <h3 style={benefitStyles.title}>{TXT.benefit2Title[LANG]}</h3>
-          <p style={benefitStyles.text}>{TXT.benefit2Text[LANG]}</p>
-        </div>
-        <div style={benefitStyles.card}>
-          <div style={benefitStyles.icon}>📞</div>
-          <h3 style={benefitStyles.title}>{TXT.benefit3Title[LANG]}</h3>
-          <p style={benefitStyles.text}>{TXT.benefit3Text[LANG]}</p>
+
+        {/* BENEFITS SECTION */}
+        <h2 style={benefitStyles.heading}>{TXT.benefitsTitle[LANG]}</h2>
+        <div style={benefitStyles.container}>
+          <div style={benefitStyles.card}>
+            <div style={benefitStyles.icon}>👁️</div>
+            <h3 style={benefitStyles.title}>{TXT.benefit1Title[LANG]}</h3>
+            <p style={benefitStyles.text}>{TXT.benefit1Text[LANG]}</p>
+          </div>
+          <div style={benefitStyles.card}>
+            <div style={benefitStyles.icon}>📈</div>
+            <h3 style={benefitStyles.title}>{TXT.benefit2Title[LANG]}</h3>
+            <p style={benefitStyles.text}>{TXT.benefit2Text[LANG]}</p>
+          </div>
+          <div style={benefitStyles.card}>
+            <div style={benefitStyles.icon}>📞</div>
+            <h3 style={benefitStyles.title}>{TXT.benefit3Title[LANG]}</h3>
+            <p style={benefitStyles.text}>{TXT.benefit3Text[LANG]}</p>
+          </div>
         </div>
       </div>
     </div>
@@ -346,47 +439,44 @@ export default function Plan() {
 }
 
 /* ================= STYLES ================= */
-// Styles remain unchanged, just pasted below for context
 const headerStyles = {
   header: {
     position: "sticky",
     top: 0,
-    zIndex: 100,
+    zIndex: 90,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: "14px 20px",
-    background: "#0f0f0f",
-    borderBottom: "1px solid #222",
-  },
-  backBtn: {
-    background: "transparent",
-    border: "1px solid #333",
-    color: "#fff",
-    padding: "6px 12px",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontSize: "14px",
+    padding: "15px 24px",
+    background: "rgba(255, 255, 255, 0.95)", // White with transparency
+    backdropFilter: "blur(10px)",
+    borderBottom: "1px solid #e5e7eb", // Light gray border
+    boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
   },
   title: {
     margin: 0,
     fontSize: "18px",
     fontWeight: 700,
-    color: "#fff",
+    color: "#111827", // Almost black
     letterSpacing: "0.5px",
   },
 };
 
 const styles = {
   page: {
-    background: "#0f0f0f",
+    background: "#f9fafb", // Very light gray background
     minHeight: "100vh",
-    padding: "40px 20px",
-    paddingTop: "20px",
-    textAlign: "center",
-    color: "white",
     fontFamily: "Inter, sans-serif, Noto Sans Tamil",
     position: "relative",
+    color: "#1f2937",
+  },
+  navContainer: {
+    background: "#fff",
+    borderBottom: "1px solid #eee",
+  },
+  contentContainer: {
+    padding: "40px 20px",
+    textAlign: "center",
   },
   modalOverlay: {
     position: "fixed",
@@ -394,7 +484,7 @@ const styles = {
     left: 0,
     width: "100%",
     height: "100%",
-    background: "rgba(0,0,0,0.85)",
+    background: "rgba(0,0,0,0.6)", // Lighter overlay
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -402,184 +492,230 @@ const styles = {
     backdropFilter: "blur(5px)"
   },
   modalCard: {
-    background: "#1e1e1e",
+    background: "#ffffff", // White modal
     width: "90%",
-    maxWidth: "400px",
+    maxWidth: "420px",
     padding: "40px 30px",
-    borderRadius: "20px",
+    borderRadius: "24px",
     textAlign: "center",
-    boxShadow: "0 20px 50px rgba(0,0,0,0.5)",
-    border: "1px solid #333"
+    boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+    border: "1px solid #f0f0f0"
   },
   iconContainer: {
     marginBottom: "20px",
-    display: "inline-block",
-    padding: "15px",
-    background: "rgba(34, 197, 94, 0.1)",
+    display: "inline-flex",
+    padding: "16px",
+    background: "#ecfdf5", // Light green bg
     borderRadius: "50%"
   },
   modalTitle: {
-    fontSize: "24px",
-    fontWeight: "bold",
-    color: "#fff",
+    fontSize: "26px",
+    fontWeight: "800",
+    color: "#065f46", // Dark green title
     marginBottom: "10px"
   },
   modalText: {
-    color: "#aaa",
+    color: "#6b7280", // Gray text
     marginBottom: "25px",
-    fontSize: "15px"
+    fontSize: "16px",
+    lineHeight: "1.5"
   },
   transactionBox: {
-    background: "#111",
+    background: "#f3f4f6", // Light gray box
     padding: "15px",
-    borderRadius: "8px",
+    borderRadius: "12px",
     marginBottom: "25px",
     textAlign: "center",
-    border: "1px dashed #444"
+    border: "1px solid #e5e7eb"
   },
   continueBtn: {
     width: "100%",
-    padding: "14px",
+    padding: "16px",
     background: "#22c55e",
-    color: "#000",
-    fontWeight: "bold",
+    color: "#ffffff",
+    fontWeight: "700",
     border: "none",
-    borderRadius: "10px",
+    borderRadius: "12px",
     cursor: "pointer",
     fontSize: "16px",
-    transition: "background 0.2s"
+    boxShadow: "0 4px 6px -1px rgba(34, 197, 94, 0.4)",
+    transition: "transform 0.2s"
   },
-  backBtn: {
-    position: "absolute",
-    top: 20,
-    left: 20,
-    background: "transparent",
-    border: "1px solid #444",
-    color: "#fff",
-    padding: "6px 12px",
-    borderRadius: "8px",
-    cursor: "pointer",
-    fontSize: "14px",
+
+  // Page Typography
+  title: {
+    fontSize: "42px",
+    fontWeight: 800,
+    marginBottom: "12px",
+    color: "#111827",
+    letterSpacing: "-0.5px"
   },
-  title: { fontSize: "46px", fontWeight: 700, marginBottom: 10 },
-  subtitle: { color: "#c7c7c7", fontSize: "16px", marginBottom: "35px" },
+  subtitle: {
+    color: "#6b7280",
+    fontSize: "18px",
+    marginBottom: "50px",
+    maxWidth: "600px",
+    marginLeft: "auto",
+    marginRight: "auto",
+    lineHeight: "1.6"
+  },
   planRow: {
     display: "flex",
     justifyContent: "center",
-    gap: "40px",
+    gap: "30px",
     flexWrap: "wrap",
+    alignItems: "stretch" // Make cards same height
   },
-  planName: { fontSize: "22px", fontWeight: "700", marginTop: "20px", marginBottom: "5px" },
-  planType: { fontSize: "14px", opacity: 0.7, marginBottom: "15px" },
-  priceMonth: { fontSize: "16px", fontWeight: "400", opacity: 0.8 },
-  includesTitle: { fontSize: "16px", fontWeight: "bold", marginBottom: "5px" },
-  featureItem: { marginBottom: "8px", fontSize: "15px" },
+  planName: { fontSize: "24px", fontWeight: "800", marginTop: "20px", marginBottom: "5px" },
+  planType: { fontSize: "14px", fontWeight: "500", opacity: 0.8, marginBottom: "15px", textTransform: "uppercase", letterSpacing: "1px" },
+  priceMonth: { fontSize: "16px", fontWeight: "500", opacity: 0.7 },
+  includesTitle: { fontSize: "15px", fontWeight: "700", marginBottom: "10px", textTransform: "uppercase", letterSpacing: "0.5px", opacity: 0.9 },
+  featureItem: { marginBottom: "10px", fontSize: "15px", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" },
+
+  // SILVER CARD (Clean Light Gray)
   cardSilver: {
-    background: "#d8d8d8",
-    width: "320px",
-    padding: "30px",
-    color: "#000",
-    borderRadius: "16px",
-    border: "2px solid #bbbbbb",
+    background: "#ffffff",
+    width: "340px",
+    padding: "40px 30px",
+    color: "#333",
+    borderRadius: "24px",
+    border: "1px solid #e5e7eb",
     position: "relative",
+    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.05)",
+    transition: "transform 0.2s",
   },
   badgeSilver: {
-    background: "#c0c0c0",
-    padding: "6px 18px",
-    borderRadius: "12px",
+    background: "#9ca3af", // Gray badge
+    color: "#fff",
+    padding: "6px 16px",
+    borderRadius: "20px",
     position: "absolute",
-    top: "-12px",
+    top: "-14px",
     left: "50%",
     transform: "translateX(-50%)",
     fontWeight: "700",
+    fontSize: "13px",
+    boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
   },
-  priceSilver: { fontSize: "50px", fontWeight: "900", color: "#555" },
+  priceSilver: { fontSize: "48px", fontWeight: "800", color: "#374151" },
   startSilver: {
     width: "100%",
-    padding: "12px",
-    background: "#555",
+    padding: "14px",
+    background: "#4b5563",
     color: "#fff",
     fontWeight: 700,
-    borderRadius: "10px",
+    borderRadius: "12px",
     border: "none",
     cursor: "pointer",
-    transition: "0.2s"
+    transition: "0.2s",
+    marginTop: "10px",
+    fontSize: "16px"
   },
-  dividerSilver: { height: "1px", background: "#aaa", margin: "20px 0" },
+  dividerSilver: { height: "1px", background: "#f3f4f6", margin: "25px 0" },
+  featuresSilver: { color: "#4b5563" },
+
+  // PLATINUM CARD (Premium Dark/Gradient Look)
   cardPlatinum: {
-    background: "linear-gradient(145deg, #ffffff, #d6d6d6)",
-    width: "340px",
-    padding: "30px",
-    borderRadius: "18px",
-    border: "2px solid #e3e3e3",
-    boxShadow: "0px 0px 25px rgba(255,255,255,0.3)",
-    color: "#000",
+    background: "linear-gradient(135deg, #1f2937 0%, #111827 100%)", // Dark gradient
+    width: "360px",
+    padding: "45px 30px",
+    borderRadius: "24px",
+    border: "1px solid #374151",
+    boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)",
+    color: "#fff",
     position: "relative",
+    zIndex: 10,
+    transform: "scale(1.05)", // Slightly larger
   },
   badgePlatinum: {
-    background: "#fff",
-    padding: "6px 18px",
-    borderRadius: "12px",
-    top: "-12px",
+    background: "linear-gradient(90deg, #6366f1, #a855f7)", // Indigo to Purple
+    color: "#fff",
+    padding: "8px 20px",
+    borderRadius: "20px",
+    top: "-15px",
     left: "50%",
     position: "absolute",
     transform: "translateX(-50%)",
     fontWeight: 700,
-    border: "1px solid #ccc",
+    fontSize: "14px",
+    boxShadow: "0 4px 10px rgba(168, 85, 247, 0.4)",
+    border: "none"
   },
-  pricePlatinum: { fontSize: "50px", fontWeight: "900", color: "#5e5e5e" },
+  pricePlatinum: { fontSize: "52px", fontWeight: "900", color: "#fff" },
   startPlatinum: {
     width: "100%",
-    background: "#000",
-    padding: "12px",
-    color: "#fff",
-    borderRadius: "10px",
-    fontWeight: 700,
+    background: "#fff",
+    color: "#111827",
+    padding: "14px",
+    borderRadius: "12px",
+    fontWeight: 800,
     border: "none",
     cursor: "pointer",
-    transition: "0.2s"
+    transition: "0.2s",
+    marginTop: "10px",
+    fontSize: "16px",
+    boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
   },
-  dividerPlatinum: { background: "#bbb", height: "1px", margin: "20px 0" },
+  dividerPlatinum: { background: "rgba(255,255,255,0.1)", height: "1px", margin: "25px 0" },
+  featuresPlatinum: { color: "#e5e7eb" },
+
+  // GOLD CARD (Warm Gradient)
   cardGold: {
-    background: "linear-gradient(180deg, #ffe29f, #ffa751)",
-    width: "320px",
-    padding: "30px",
-    borderRadius: "16px",
-    border: "2px solid #ffcb6b",
-    color: "#000",
-    boxShadow: "0px 0px 20px rgba(255,200,0,0.3)",
+    background: "#fff7ed", // Very light orange/cream
+    width: "340px",
+    padding: "40px 30px",
+    borderRadius: "24px",
+    border: "2px solid #fdba74", // Orange border
+    color: "#431407",
+    boxShadow: "0 10px 15px -3px rgba(251, 146, 60, 0.15)",
     position: "relative",
   },
   badgeGold: {
-    background: "#fff",
-    padding: "6px 18px",
-    borderRadius: "12px",
+    background: "#f59e0b", // Amber
+    color: "#fff",
+    padding: "6px 16px",
+    borderRadius: "20px",
     position: "absolute",
-    top: "-12px",
+    top: "-14px",
     left: "50%",
     transform: "translateX(-50%)",
-    fontWeight: 700,
+    fontWeight: "700",
+    fontSize: "13px",
+    boxShadow: "0 4px 6px rgba(245, 158, 11, 0.3)"
   },
-  priceGold: { fontSize: "50px", fontWeight: "900", color: "#8a5300" },
+  priceGold: { fontSize: "48px", fontWeight: "900", color: "#9a3412" }, // Rust color
   startGold: {
     width: "100%",
-    padding: "12px",
-    background: "#000",
+    padding: "14px",
+    background: "linear-gradient(to right, #d97706, #b45309)",
     color: "#fff",
-    borderRadius: "10px",
+    borderRadius: "12px",
     fontWeight: 700,
     border: "none",
     cursor: "pointer",
-    transition: "0.2s"
+    transition: "0.2s",
+    marginTop: "10px",
+    fontSize: "16px",
+    boxShadow: "0 4px 6px rgba(217, 119, 6, 0.3)"
   },
-  dividerGold: { background: "#a87b00", height: "1px", margin: "20px 0" },
+  dividerGold: { background: "#fed7aa", height: "1px", margin: "25px 0" },
+  featuresGold: { color: "#78350f" },
 };
 
 const benefitStyles = {
-  heading: { fontSize: "34px", fontWeight: 700, marginTop: "60px", marginBottom: "40px" },
-  container: { display: "flex", justifyContent: "center", gap: "60px", flexWrap: "wrap", paddingBottom: "40px" },
-  card: { width: "260px", background: "#181818", padding: "20px", borderRadius: "16px", border: "1px solid #333", textAlign: "center" },
-  icon: { fontSize: "50px", marginBottom: "15px" },
-  title: { fontSize: "20px", fontWeight: 700, marginBottom: "10px" },
-  text: { fontSize: "15px", color: "#cfcfcf", lineHeight: "22px" },
+  heading: { fontSize: "32px", fontWeight: 800, marginTop: "80px", marginBottom: "50px", color: "#111827" },
+  container: { display: "flex", justifyContent: "center", gap: "30px", flexWrap: "wrap", paddingBottom: "40px" },
+  card: {
+    width: "280px",
+    background: "#ffffff",
+    padding: "30px 20px",
+    borderRadius: "20px",
+    border: "1px solid #f3f4f6",
+    textAlign: "center",
+    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
+    transition: "transform 0.2s hover:shadow-lg"
+  },
+  icon: { fontSize: "42px", marginBottom: "15px", background: "#f9fafb", width: "80px", height: "80px", lineHeight: "80px", borderRadius: "50%", margin: "0 auto 20px" },
+  title: { fontSize: "18px", fontWeight: 700, marginBottom: "10px", color: "#1f2937" },
+  text: { fontSize: "15px", color: "#6b7280", lineHeight: "1.6" },
 };
