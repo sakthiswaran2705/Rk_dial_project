@@ -1,368 +1,345 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
+// 👇 FIXED: Changed Toaster to OverlayToaster for Blueprint v5+
+import { Button, Spinner, Icon, NonIdealState, OverlayToaster, Position } from "@blueprintjs/core";
+import { motion, AnimatePresence } from "framer-motion";
+import "bootstrap/dist/css/bootstrap.min.css";
 import Navbar from "./Navbar.jsx";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
-
-/* ---------------- MODERN STYLES SYSTEM ---------------- */
+/* ---------------- "FLOATING PILL" DESIGN SYSTEM ---------------- */
 const styles = `
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
+
   :root {
-    --primary: #ff5a5f;
-    --bg: #f3f4f6;
-    --card-bg: #ffffff;
-    --text-main: #1f2937;
-    --text-sub: #6b7280;
-    --border: #e5e7eb;
-    --navbar-height: 20px;
-    --btn-call-bg: #ecfdf5;
-    --btn-call-text: #059669;
-    --btn-chat-bg: #eff6ff;
-    --btn-chat-text: #2563eb;
-    --btn-map-bg: #fdf2f8;
-    --btn-map-text: #db2777;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --accent: #f59e0b;
+    --bg-page: #f8fafc;
+    --text-main: #0f172a;
+    --text-sub: #64748b;
+    --shadow-soft: 0 10px 40px -10px rgba(0,0,0,0.08);
+    --shadow-hover: 0 20px 40px -10px rgba(0,0,0,0.15);
   }
 
   body {
-    background: var(--bg);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    margin: 0;
-    padding-top: var(--navbar-height);
+    background-color: var(--bg-page);
+    font-family: 'DM Sans', sans-serif;
     color: var(--text-main);
-    -webkit-font-smoothing: antialiased;
+    margin: 0;
   }
 
-  /* ---------- STICKY HEADER ---------- */
-  .sticky-header {
+  /* --- HEADER AREA --- */
+  .search-header {
+    background: #ffffff;
+    padding: 20px 0;
     position: sticky;
-    top: var(--navbar-height);
-    z-index: 90;
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(0,0,0,0.05);
-    padding: 15px 0;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+    top: 0;
+    z-index: 50;
+    border-bottom: 1px solid #e2e8f0;
   }
 
-  .header-inner {
-    max-width: 1200px;
-    margin: auto;
+  /* --- FLOATING SEARCH BAR --- */
+  .floating-search-bar {
+    display: flex;
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 50px;
+    padding: 6px;
+    box-shadow: var(--shadow-soft);
+    max-width: 750px;
+    margin: 0 auto;
+    transition: all 0.3s ease;
+    position: relative;
+  }
+
+  .floating-search-bar:focus-within {
+    box-shadow: var(--shadow-hover);
+    border-color: var(--primary);
+    transform: translateY(-2px);
+  }
+
+  .search-section {
+    flex: 1;
+    position: relative;
     padding: 0 20px;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .header-titles {
-    display: flex;
     flex-direction: column;
-    gap: 4px;
+    justify-content: center;
   }
 
-  .header-sub {
+  .search-section:first-child { padding-left: 25px; }
+
+  .search-label {
     font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--primary);
-  }
-
-  .header-title {
-    font-size: 20px;
     font-weight: 800;
-    color: var(--text-main);
-    margin: 0;
-    letter-spacing: -0.5px;
-  }
-
-  .btn-back {
-    background: white;
-    border: 1px solid var(--border);
-    padding: 8px 16px;
-    border-radius: 50px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-main);
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-  }
-  .btn-back:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-  }
-
-  /* ---------- GRID CONTAINER ---------- */
-  .container {
-    max-width: 1200px;
-    margin: auto;
-    padding: 0 20px 40px 20px;
-  }
-
-  .results-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 24px;
-  }
-
-
-  /* ---------- LOADING & EMPTY STATES ---------- */
-  .state-container {
-    text-align: center;
-    padding: 60px 20px;
-    grid-column: 1 / -1;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
     color: var(--text-sub);
+    margin-bottom: 2px;
   }
 
-  .loading-pulse {
-    display: inline-block;
-    width: 40px;
-    height: 40px;
-    border: 3px solid rgba(0,0,0,0.1);
-    border-radius: 50%;
-    border-top-color: var(--primary);
-    animation: spin 1s ease-in-out infinite;
-    margin-bottom: 15px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .loader-small {
-    width: 24px;
-    height: 24px;
-    border-width: 2px;
-    margin-bottom: 0;
-  }
-
-  /* ---------- CARD DESIGN ---------- */
-  .card {
-    background: var(--card-bg);
-    border-radius: 20px;
-    overflow: hidden;
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-    border: 1px solid rgba(0,0,0,0.04);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.03), 0 4px 6px -2px rgba(0, 0, 0, 0.01);
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    cursor: pointer;
-    position: relative;
-  }
-
-  .card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 10px 10px -5px rgba(0, 0, 0, 0.03);
-  }
-
-  .card-img-wrapper {
-    height: 200px;
-    background: #e5e7eb;
-    position: relative;
-  }
-
-  .card-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .badge-category {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    color: white;
-    padding: 4px 10px;
-    font-size: 11px;
-    font-weight: 600;
-    border-radius: 6px;
-    text-transform: capitalize;
-  }
-
-  .badge-rating {
-    position: absolute;
-    bottom: 12px;
-    right: 12px;
-    background: white;
-    padding: 4px 8px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--text-main);
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .card-body {
-    padding: 18px;
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .card-title {
-    font-size: 18px;
-    font-weight: 700;
-    margin-bottom: 6px;
-    color: var(--text-main);
-    line-height: 1.3;
-  }
-
-  .card-loc {
-    font-size: 13px;
-    color: var(--text-sub);
-    display: flex;
-    align-items: flex-start;
-    gap: 5px;
-    margin-bottom: 15px;
-    line-height: 1.4;
-  }
-
-  /* ---------- ACTION BUTTONS ---------- */
-  .actions {
-    margin-top: auto;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px;
-    padding-top: 15px;
-    border-top: 1px dashed var(--border);
-  }
-
-  .action-btn {
+  .search-input {
     border: none;
-    padding: 8px 0;
-    border-radius: 12px;
-    font-size: 13px;
+    outline: none;
+    width: 100%;
+    font-size: 15px;
     font-weight: 600;
-    cursor: pointer;
+    color: var(--text-main);
+    padding: 0;
+    background: transparent;
+  }
+
+  .search-input::placeholder { color: #cbd5e1; font-weight: 500; }
+
+  .search-divider { width: 1px; height: 30px; background-color: #e2e8f0; }
+
+  .search-btn-round {
+    background: var(--primary);
+    color: white;
+    border: none;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: 10px;
+    flex-shrink: 0;
+  }
+  .search-btn-round:hover { background: var(--primary-hover); transform: scale(1.05); }
+
+  /* --- SUGGESTION DROPDOWN --- */
+  .suggestions-dropdown {
+    position: absolute;
+    top: 120%;
+    left: 0;
+    width: 100%;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+    padding: 10px 0;
+    z-index: 1000;
+    border: 1px solid #f1f5f9;
+    max-height: 250px;
+    overflow-y: auto;
+    min-width: 250px;
+  }
+
+  .suggestion-item {
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-main);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     transition: background 0.2s;
   }
 
-  .btn-call { background: var(--btn-call-bg); color: var(--btn-call-text); }
-  .btn-call:hover { background: #d1fae5; }
+  .suggestion-item:hover { background: #eff6ff; color: var(--primary); }
+  .suggestion-item i { color: #94a3b8; font-size: 12px; }
 
-  .btn-chat { background: var(--btn-chat-bg); color: var(--btn-chat-text); }
-  .btn-chat:hover { background: #dbeafe; }
+  /* --- RESULTS GRID --- */
+  .results-container { padding: 40px 20px; max-width: 1200px; margin: 0 auto; }
+  .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 30px; }
 
-  .btn-map { background: var(--btn-map-bg); color: var(--btn-map-text); }
-  .btn-map:hover { background: #fce7f3; }
+  /* --- CARD STYLE --- */
+  .clean-card {
+    background: white; border-radius: 16px; overflow: hidden; transition: all 0.3s ease;
+    cursor: pointer; position: relative; border: 1px solid transparent;
+    display: flex; flex-direction: column;
+  }
+  .clean-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-hover); }
+  .card-image-box { height: 200px; width: 100%; position: relative; overflow: hidden; background: #f1f5f9; border-radius: 16px; }
+  .card-img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s ease; }
+  .clean-card:hover .card-img { transform: scale(1.08); }
+  .rating-pill { position: absolute; top: 10px; right: 10px; background: rgba(255, 255, 255, 0.95); padding: 4px 8px; border-radius: 8px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+  .card-info { padding: 15px 5px; flex-grow: 1; display: flex; flex-direction: column; }
+  .card-title { font-size: 17px; font-weight: 700; color: var(--text-main); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-sub { font-size: 14px; color: var(--text-sub); display: flex; align-items: center; gap: 5px; margin-bottom: 15px; }
+  
+  .card-actions-row { display: flex; gap: 10px; margin-top: auto; }
+  .action-chip { flex: 1; border: 1px solid #e2e8f0; background: white; color: var(--text-sub); padding: 8px; border-radius: 8px; font-size: 12px; font-weight: 600; text-align: center; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 5px; }
+  .action-chip:hover { border-color: var(--primary); color: var(--primary); background: #eff6ff; }
+
+  @media (max-width: 768px) {
+    .floating-search-bar { flex-direction: column; border-radius: 20px; padding: 15px; gap: 10px; }
+    .search-divider { width: 100%; height: 1px; }
+    .search-section { width: 100%; padding: 0 !important; }
+    .search-btn-round { width: 100%; border-radius: 12px; height: 45px; margin-left: 0; }
+    .suggestions-dropdown { top: 100%; width: 100%; }
+  }
 `;
+
+// Simple Debounce
+const useDebounce = (callback, delay) => {
+    const timer = useRef(null);
+    return useCallback((...args) => {
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => callback(...args), delay);
+    }, [callback, delay]);
+};
+
+// 👇 FIXED: Changed Toaster to OverlayToaster
+const AppToaster = await OverlayToaster.create({ position: Position.TOP });
 
 export default function SearchResults() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const category = searchParams.get("category") || "Shop";
-  const city = searchParams.get("city") || "City";
+  const initialCat = searchParams.get("category") || "";
+  const initialCity = searchParams.get("city") || "";
   const lang = localStorage.getItem("LANG") || "en";
 
   // State
+  const [catInput, setCatInput] = useState(initialCat);
+  const [cityInput, setCityInput] = useState(initialCity);
+
+  // Suggestion Data
+  const [allCategories, setAllCategories] = useState([]);
+  const [catSuggestions, setCatSuggestions] = useState([]);
+  const [citySuggestions, setCitySuggestions] = useState([]);
+
+  // Dropdown Visibility
+  const [showCatDrop, setShowCatDrop] = useState(false);
+  const [showCityDrop, setShowCityDrop] = useState(false);
+
+  // Results State
   const [results, setResults] = useState([]);
-  const [loading, setLoading] = useState(true); // First load
-  const [loadingMore, setLoadingMore] = useState(false); // Scroll load
+  const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  // --- Fetch Function ---
-  const fetchResults = async (pageNum, isInitial = false) => {
-    if (isInitial) setLoading(true);
-    else setLoadingMore(true);
+  // --- 1. FETCH MASTER CATEGORY LIST ---
+  useEffect(() => {
+    const fetchCats = async () => {
+        try {
+            const res = await fetch(`http://127.0.0.1:8000/category/list/?lang=${lang}`);
+            const json = await res.json();
+            setAllCategories(json.data || []);
+        } catch (e) {
+            console.error("Failed to load categories", e);
+        }
+    };
+    fetchCats();
+  }, [lang]);
+
+  // --- 2. SUGGESTION LOGIC ---
+  const fetchCatSuggestions = async (val) => {
+    if (!val.trim()) { setCatSuggestions([]); return; }
+    const lower = val.toLowerCase();
+
+    let combinedList = [];
+    if (allCategories.length > 0) {
+        allCategories.forEach(cat => {
+            if (cat.name.toLowerCase().includes(lower)) combinedList.push(cat.name);
+        });
+    }
 
     try {
+      const res = await fetch(`http://127.0.0.1:8000/shop/search/?name=${encodeURIComponent(val)}&lang=${lang}`);
+      const json = await res.json();
+      const apiData = json.data || [];
+      apiData.forEach((item) => {
+          const shopName = item.shop?.shop_name || item.shop_name;
+          if (shopName && !combinedList.includes(shopName)) combinedList.push(shopName);
+      });
+    } catch (e) { console.error(e); }
+
+    setCatSuggestions([...new Set(combinedList)].slice(0, 8));
+  };
+
+  const fetchCitySuggestions = async (val) => {
+    if (val.length < 2) { setCitySuggestions([]); return; }
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/city/search/?city_name=${encodeURIComponent(val)}&lang=${lang}`);
+      const json = await res.json();
+      const list = (json.data || []).map(c => c.city_name).slice(0, 6);
+      setCitySuggestions([...new Set(list)]);
+    } catch (e) { console.error(e); }
+  };
+
+  const debouncedCat = useDebounce(fetchCatSuggestions, 300);
+  const debouncedCity = useDebounce(fetchCitySuggestions, 300);
+
+  // --- 3. RESULTS FETCHING ---
+  const fetchResults = async (pageNum, isInitial = false) => {
+    if (isInitial) setLoading(true); else setLoadingMore(true);
+    try {
       const res = await fetch(
-        `${BACKEND_URL}/shop/search/?name=${encodeURIComponent(category)}&place=${encodeURIComponent(city)}&lang=${lang}&page=${pageNum}`
+        `http://127.0.0.1:8000/shop/search/?name=${encodeURIComponent(isInitial ? initialCat : catInput)}&place=${encodeURIComponent(isInitial ? initialCity : cityInput)}&lang=${lang}&page=${pageNum}`
       );
       const json = await res.json();
       const newData = json.data || [];
-      const backendHasMore = json.has_more;
-
-      if (isInitial) {
-        setResults(newData);
-        if (newData.length > 0) {
-          sessionStorage.setItem("SEARCH_CONTEXT_SHOPS", JSON.stringify(newData));
-        }
-      } else {
-        setResults((prev) => {
-            const updated = [...prev, ...newData];
-            sessionStorage.setItem("SEARCH_CONTEXT_SHOPS", JSON.stringify(updated));
-            return updated;
-        });
-      }
-      
-      setHasMore(backendHasMore);
-
-    } catch (error) {
-      console.error("Search failed", error);
-    } finally {
-      if (isInitial) setLoading(false);
-      else setLoadingMore(false);
-    }
+      if (isInitial) setResults(newData);
+      else setResults(prev => [...prev, ...newData]);
+      setHasMore(json.has_more || false);
+    } catch (error) { console.error(error); }
+    finally { if (isInitial) setLoading(false); else setLoadingMore(false); }
   };
 
-  // --- Effect 1: Filter Change (Reset) ---
   useEffect(() => {
+    setCatInput(initialCat);
+    setCityInput(initialCity);
     setPage(1);
-    setHasMore(true);
-    setResults([]);
     fetchResults(1, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, city, lang]);
+    // eslint-disable-next-line
+  }, [initialCat, initialCity, lang]);
 
-  // --- Effect 2: Page Change (Load More) ---
-  useEffect(() => {
-    if (page > 1) {
-      fetchResults(page, false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  useEffect(() => { if (page > 1) fetchResults(page, false); }, [page]);
 
-  // --- Effect 3: Scroll Listener ---
   useEffect(() => {
     const handleScroll = () => {
-      // Logic: Near bottom (100px)
-      if (
-        window.innerHeight + document.documentElement.scrollTop >=
-        document.documentElement.offsetHeight - 100
-      ) {
-        if (!loading && !loadingMore && hasMore) {
-          setPage((prev) => prev + 1);
-        }
+      if (window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - 100) {
+        if (!loading && !loadingMore && hasMore) setPage(p => p + 1);
       }
     };
-
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, [loading, loadingMore, hasMore]);
 
-
-  // --- Handlers ---
-  const handleCall = (e, num) => {
-    e.stopPropagation();
-    if (num) window.location.href = `tel:${num}`;
+  // --- HANDLERS ---
+  const handleSearch = (c = catInput, ct = cityInput) => {
+    setShowCatDrop(false);
+    setShowCityDrop(false);
+    if (c && ct) {
+      navigate(`/results?category=${encodeURIComponent(c)}&city=${encodeURIComponent(ct)}`);
+    } else {
+        AppToaster.show({ message: "Please enter both category and city!", intent: "warning" });
+    }
   };
 
-  const handleChat = (e, num) => {
+  // --- FIXED ACTION HANDLER (CALL/CHAT/MAP) ---
+  const handleAction = (e, type, value) => {
     e.stopPropagation();
-    if (num) window.open(`https://wa.me/${num}`, "_blank");
-  };
+    e.preventDefault();
 
-  const handleMap = (e, name, cityLocation) => {
-    e.stopPropagation();
-    const query = `${name}, ${cityLocation}`;
-    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`, "_blank");
-  };
+    if (!value) {
+        AppToaster.show({ message: "Contact info not available.", intent: "danger", icon: "error" });
+        return;
+    }
 
-  const navigateToShop = (item) => {
-    const shop = item.shop || item.shop?.shop || item;
-    const cityObj = item.city || shop.city || {};
-    navigate("/shop", { state: { shop, city: cityObj } });
+    try {
+        if (type === 'call') {
+            window.location.href = `tel:${value}`;
+        }
+        else if (type === 'chat') {
+            const cleanNum = value.toString().replace(/\D/g,'');
+            const finalNum = cleanNum.length === 10 ? `91${cleanNum}` : cleanNum;
+            window.open(`https://wa.me/${finalNum}`, '_blank');
+        }
+        else if (type === 'map') {
+            // FIXED URL
+            window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(value)}`, '_blank');
+        }
+    } catch(err) {
+        console.error("Action failed", err);
+    }
   };
 
   return (
@@ -370,116 +347,162 @@ export default function SearchResults() {
       <style>{styles}</style>
       <Navbar />
 
-      {/* HEADER */}
-      <div className="sticky-header">
-        <div className="header-inner">
-          <div className="header-titles">
-              <span className="header-sub">SEARCH RESULTS</span>
-              <h1 className="header-title">
-                {category.toLowerCase()} <span style={{opacity:0.6}}>in</span> {city.toLowerCase()}
-              </h1>
+      <div className="search-header">
+        <div className="container">
+          <div className="floating-search-bar">
+            {/* Find Input */}
+            <div className="search-section">
+              <label className="search-label">Find</label>
+              <input
+                className="search-input"
+                placeholder="Plumber, Hotel, Gym..."
+                value={catInput}
+                autoComplete="off"
+                onChange={(e) => {
+                  setCatInput(e.target.value);
+                  debouncedCat(e.target.value);
+                  setShowCatDrop(true);
+                }}
+                onFocus={() => { setShowCatDrop(true); if(catInput) debouncedCat(catInput); }}
+                onBlur={() => setTimeout(() => setShowCatDrop(false), 200)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              />
+              <AnimatePresence>
+                {showCatDrop && catSuggestions.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className="suggestions-dropdown"
+                  >
+                    {catSuggestions.map((item, i) => (
+                      <div key={i} className="suggestion-item" onMouseDown={() => { setCatInput(item); handleSearch(item, cityInput); }}>
+                        <Icon icon="search" /> {item}
+                      </div>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
-          <button className="btn-back" onClick={() => navigate(-1)}>
-            ← Back
-          </button>
+            <div className="search-divider"></div>
+
+            {/* Where Input */}
+            <div className="search-section">
+              <label className="search-label">Where</label>
+              <input
+                className="search-input"
+                placeholder="City or Zip code"
+                value={cityInput}
+                autoComplete="off"
+                onChange={(e) => {
+                  setCityInput(e.target.value);
+                  debouncedCity(e.target.value);
+                  setShowCityDrop(true);
+                }}
+                onFocus={() => { setShowCityDrop(true); if(cityInput) debouncedCity(cityInput); }}
+                onBlur={() => setTimeout(() => setShowCityDrop(false), 200)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              />
+              <AnimatePresence>
+                {showCityDrop && citySuggestions.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className="suggestions-dropdown"
+                  >
+                    {citySuggestions.map((item, i) => (
+                      <div key={i} className="suggestion-item" onMouseDown={() => { setCityInput(item); }}>
+                        <Icon icon="map-marker" style={{color:'#10b981'}} /> {item}
+                      </div>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <button className="search-btn-round" onClick={() => handleSearch()}>
+              <Icon icon="search" size={20} color="white" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* MAIN CONTENT */}
-      <div className="container">
-
-        {/* Initial Loading */}
-        {loading && (
-          <div className="state-container">
-            <div className="loading-pulse"></div>
-            <p>Finding the best <strong>{category}</strong> for you...</p>
+      <div className="results-container">
+        {loading ? (
+          <div className="results-grid">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="clean-card" style={{height:300, background:'#fff', border:'1px solid #f1f5f9'}}>
+                <div style={{height:200, background:'#f1f5f9'}} />
+              </div>
+            ))}
           </div>
-        )}
+        ) : (
+            <>
+                {results.length === 0 ? (
+                <NonIdealState
+                    icon="search"
+                    title="No Results Found"
+                    description="We couldn't find anything matching your search."
+                    action={<Button intent="primary" onClick={() => navigate('/')}>Go Home</Button>}
+                />
+                ) : (
+                <div className="results-grid">
+                    <AnimatePresence>
+                    {results.map((item, idx) => {
+                        const s = item.shop || item.shop?.shop || item;
+                        const img = s.main_image
+                        ? `http://127.0.0.1:8000/${s.main_image}`
+                        : (s.media?.[0]?.path ? `http://127.0.0.1:8000/${s.media[0].path}` : "https://via.placeholder.com/400x300");
 
-        {/* No Results */}
-        {!loading && results.length === 0 && (
-          <div className="state-container">
-             <h3>No results found 😕</h3>
-             <p>We couldn't find any "{category}" in "{city}".<br/>Try checking the spelling or search for a nearby city.</p>
-          </div>
-        )}
+                        // --- DATA FOR ACTIONS ---
+                        const contactNum = s.mobile || s.phone_number;
+                        // Prioritize Full Address -> City -> Search City
+                        const mapLocation = s.address ? `${s.shop_name}, ${s.address}` : (s.city ? `${s.shop_name}, ${s.city}` : cityInput);
 
-        {/* Results Grid */}
-        <div className="results-grid">
-          {!loading &&
-            results.map((item, i) => {
-              // Data Normalization
-              const s = item.shop || item.shop?.shop || item;
-              const c = item.city || s.city || {};
+                        return (
+                        <motion.div
+                            key={idx}
+                            className="clean-card"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: idx * 0.05 }}
+                            onClick={() => navigate("/shop", { state: { shop: s } })}
+                        >
+                            <div className="card-image-box">
+                            <img src={img} alt={s.shop_name} className="card-img" />
+                            <div className="rating-pill">
+                                <Icon icon="star" color="#f59e0b" size={12} style={{marginBottom:2}} />
+                                {s.avg_rating ? parseFloat(s.avg_rating).toFixed(1) : "N/A"}
+                            </div>
+                            </div>
+                            <div className="card-info">
+                            <div className="card-title">{s.shop_name}</div>
+                            <div className="card-sub">
+                                <Icon icon="map-marker" color="#94a3b8" size={12} />
+                                {s.address || cityInput}
+                            </div>
 
-              // Image Logic
-              let imgUrl = "https://via.placeholder.com/600x400?text=No+Image";
-              if (s.main_image) {
-                imgUrl = `${BACKEND_URL}/${s.main_image}`;
-              } else if (s.media && s.media.length > 0 && s.media[0].path) {
-                imgUrl = `${BACKEND_URL}/${s.media[0].path}`;
-              }
+                            {/* ACTION BUTTONS */}
+                            <div className="card-actions-row">
+                                <div className="action-chip" onClick={(e) => handleAction(e, 'call', contactNum)}>
+                                    <Icon icon="phone" size={12} /> Call
+                                </div>
+                                <div className="action-chip" onClick={(e) => handleAction(e, 'chat', contactNum)}>
+                                    <Icon icon="chat" size={12} /> Chat
+                                </div>
+                                <div className="action-chip" onClick={(e) => handleAction(e, 'map', mapLocation)}>
+                                    <Icon icon="map" size={12} /> Map
+                                </div>
+                            </div>
 
-              const rating = item.avg_rating ? parseFloat(item.avg_rating).toFixed(1) : "New";
-
-              return (
-                <div
-                  key={i}
-                  className="card"
-                  onClick={() => navigateToShop(item)}
-                >
-                  {/* Card Image */}
-                  <div className="card-img-wrapper">
-                    <img src={imgUrl} alt={s.shop_name} className="card-img" />
-                    <div className="badge-category">{category}</div>
-                    <div className="badge-rating">⭐ {rating}</div>
-                  </div>
-
-                  {/* Card Content */}
-                  <div className="card-body">
-                    <div className="card-title">{s.shop_name}</div>
-                    <div className="card-loc">
-                      📍 {s.address || `${c.city_name || city}, ${c.district || ''}`}
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="actions">
-                      <button
-                        className="action-btn btn-call"
-                        title="Call Now"
-                        onClick={(e) => handleCall(e, s.mobile || s.phone_number)}
-                      >
-                        📞 Call
-                      </button>
-                      <button
-                        className="action-btn btn-chat"
-                        title="WhatsApp"
-                        onClick={(e) => handleChat(e, s.mobile || s.phone_number)}
-                      >
-                        💬 Chat
-                      </button>
-                      <button
-                        className="action-btn btn-map"
-                        title="Get Directions"
-                        onClick={(e) => handleMap(e, s.shop_name, c.city_name || city)}
-                      >
-                        🗺️ Map
-                      </button>
-                    </div>
-                  </div>
+                            </div>
+                        </motion.div>
+                        );
+                    })}
+                    </AnimatePresence>
                 </div>
-              );
-            })}
-        </div>
-
-        {/* Infinite Scroll Loader */}
-        {loadingMore && (
-           <div style={{ textAlign: "center", padding: "20px", width: "100%", marginTop: "10px" }}>
-             <div className="loading-pulse loader-small"></div>
-           </div>
+                )}
+            </>
         )}
-
+        {loadingMore && <div className="text-center p-4"><Spinner size={30} intent="primary" /></div>}
       </div>
     </>
   );
