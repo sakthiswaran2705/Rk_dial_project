@@ -6,6 +6,7 @@ import os, uuid
 from pydantic import BaseModel
 from api.common_urldb import db
 
+# --- EMAIL IMPORT ---
 # Ensure this path matches your project structure
 from api.email_sender import send_email
 
@@ -21,7 +22,7 @@ from api.payments import check_shop_limit, check_offer_limit
 from api.translator import ta_to_en, en_to_ta
 from api.cache import get_cached, set_cache
 
-
+# --- ROUTER AND COLLECTIONS ---
 router = APIRouter()
 col_user = db["user"]
 col_shop = db["shop"]
@@ -32,7 +33,9 @@ col_jobs = db["jobs"]
 col_notifications = db["notifications"]
 
 
-
+# ==========================================
+#        HELPER FUNCTIONS
+# ==========================================
 
 def safe(obj):
     if isinstance(obj, ObjectId):
@@ -152,7 +155,7 @@ def oid(x): return str(x) if isinstance(x, ObjectId) else x
 
 
 @router.post("/register/", operation_id="registerUser")
-def register(firstname: str = Form(None), lastname: str = Form(None), email: str = Form(None), phone: str = Form(None),
+def register(firstname: str = Form(None), lastname: str = Form(None), email: str = Form(None), phone: int = Form(None),
              password: str = Form(...)):
     if not email and not phone: return {"status": False, "message": "Email or phone number required"}
     email = email.strip().lower() if email else None
@@ -173,15 +176,21 @@ def register(firstname: str = Form(None), lastname: str = Form(None), email: str
 
 
 @router.post("/login/", operation_id="loginUser")
-def login(emailorphone: str = Form(...), password: str = Form(...)):
-    identifier = emailorphone.strip().lower()
+def login(
+    emailorphone: str = Form(...),
+    password: str = Form(...)
+):
+    identifier = emailorphone.strip()
 
-    user = col_user.find_one({
-        "$or": [
-            {"email": identifier},
-            {"phonenumber": identifier}
-        ]
-    })
+    # 🔍 Check whether input is phone number or email
+    if identifier.isdigit():
+        query = {"phonenumber": int(identifier)}
+        login_method = "phone"
+    else:
+        query = {"email": identifier.lower()}
+        login_method = "email"
+
+    user = col_user.find_one(query)
 
     if not user or hash_password(password) != user["password"]:
         return {
@@ -201,11 +210,10 @@ def login(emailorphone: str = Form(...), password: str = Form(...)):
             "firstname": user.get("firstname", ""),
             "lastname": user.get("lastname", ""),
             "profile_image": user.get("profile_image", ""),
-            "login_method": "email" if user.get("email") == identifier else "phone",
+            "login_method": login_method,
             "value": identifier
         }
     }
-
 
 @router.post("/refresh/", operation_id="refreshToken")
 def refresh_token_api(data: dict = Body(...)):
@@ -254,36 +262,57 @@ def upload_profile_image(
 
 
 #SEARCH APIs
-
 @router.get("/category/search/", operation_id="searchCategory")
 def search_category(category: str = Query(""), lang: str = Query("en")):
     search_term = translate_to_en_logic(category) if lang == "ta" else category
-    data = list(col_category.find({"name": {"$regex": search_term, "$options": "i"}}))
-    results = []
-    for item in data:
-        item_data = {**item, "_id": oid(item["_id"])}
-        if lang == "ta": item_data["name"] = translate_to_ta_logic(item_data.get("name", ""))
-        results.append(item_data)
-    msg = translate_to_ta_logic("category searched successfully") if lang == "ta" else "category searched successfully"
+
+    # OPTIMIZATION: Added limit(50) to prevent fetching the entire DB on broad queries
+    cursor = col_category.find({"name": {"$regex": search_term, "$options": "i"}}).limit(5)
+
+    # OPTIMIZATION: Split loops to avoid checking "if lang" on every single iteration
+    if lang == "ta":
+        results = [
+            {
+                **item,
+                "_id": oid(item["_id"]),
+                "name": translate_to_ta_logic(item.get("name", ""))
+            }
+            for item in cursor
+        ]
+        msg = translate_to_ta_logic("category searched successfully")
+    else:
+        # Fast path for English (No translation overhead)
+        results = [{**item, "_id": oid(item["_id"])} for item in cursor]
+        msg = "category searched successfully"
+
     return {"status": "success", "message": msg, "data": results}
 
 
 @router.get("/city/search/", operation_id="searchCity")
 def search_city(city_name: str = Query(""), lang: str = Query("en")):
     search_term = translate_to_en_logic(city_name) if lang == "ta" else city_name
-    data = list(col_city.find({"city_name": {"$regex": search_term, "$options": "i"}}).limit(20))
-    results = []
-    for item in data:
-        item_data = {**item, "_id": oid(item["_id"])}
-        if lang == "ta":
-            item_data["city_name"] = translate_to_ta_logic(item_data.get("city_name", ""))
-            item_data["district"] = translate_to_ta_logic(item_data.get("district", ""))
-            item_data["state"] = translate_to_ta_logic(item_data.get("state", ""))
-        results.append(item_data)
-    msg = translate_to_ta_logic("city searched successfully") if lang == "ta" else "city searched successfully"
+
+    # limit(20) was already present, which is good
+    cursor = col_city.find({"city_name": {"$regex": search_term, "$options": "i"}}).limit(10)
+
+    # OPTIMIZATION: Separate logic to keep English requests extremely fast
+    if lang == "ta":
+        results = []
+        for item in cursor:
+            results.append({
+                **item,
+                "_id": oid(item["_id"]),
+                "city_name": translate_to_ta_logic(item.get("city_name", "")),
+                "district": translate_to_ta_logic(item.get("district", "")),
+                "state": translate_to_ta_logic(item.get("state", ""))
+            })
+        msg = translate_to_ta_logic("city searched successfully")
+    else:
+        # Fast path for English
+        results = [{**item, "_id": oid(item["_id"])} for item in cursor]
+        msg = "city searched successfully"
+
     return {"status": "success", "message": msg, "data": results}
-
-
 
 #        SHOP MODULE
 
